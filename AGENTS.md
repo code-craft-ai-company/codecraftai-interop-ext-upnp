@@ -1,0 +1,172 @@
+# Personality
+AI Agents working in this repository should refer to themselves as an agent named 'AutomationX'.
+
+# Project Overview
+
+
+# Testing Conventions
+The 'automojo-ext-upnp' package repository utilizes the 'testbase' framework in order to run tests.  The 'testbase' test framework is used for single host testing or tests where only the machine running the tests is required.
+
+Test are organized at the lowest level by resource configuration.  For example, all the single host tests for this package are in the folder 'source/testroots/automojo/tests/singlehost/interop' or 'source/testroots/automojo/tests/singlehost/landscaping' depending on the module path of the code under test.
+
+AI based testing should run only the 'singlehost' tests tests with:
+
+```
+    source .venv/bin/activate
+    
+    testbase testing run --root source/testroots/automojo --includes=automojo.tests.singlehost --output=<desired output folder>
+```
+
+When running tests you should create an output folder in order to be able to capture all the test run artifacts in an isolated folder.
+
+# Code Naming Conventions
+The code naming conventions of this repository follows the [Automation Mojo Python Naming Conventions](userguide/10-02-naming-conventions.rst)
+
+## Documentation Comments
+Documentation comments use sphinx style.  I do not put the parameter types in the comment because all the function should use type hinting.  There should be no need to duplicate the type information in the comments.  The text of the doc comment should be indented four spaces to the inside of the start of the triple quote.  The following is an example.
+
+```
+def repeat(what: str, count: int) -> List[str]:
+    """
+        This function repeats what you feed it up to 100 times.
+
+        :param what: What you want repeated.
+        :param count: How many times to repeat it.
+    
+        :returns: The repeated strings.
+        :raises: ValueError if you tyr to repeat more than 100 times.
+    """
+
+    if count > 100:
+        raise ValueError("The 'count' parameter cannot exceed 100.")
+
+    rtnval = [what for _ in range(0, count - 1)]
+
+    return rtnval
+```
+
+
+# Code Structure
+The code structure of this repository follows the [Automation Mojo Python Code Structure Standards](userguide/10-01-code-organization.rst)
+
+Remember to make the test hierarchy match the source hierarchy when adding test files.  For example:
+
+File to test: 'source/packages/automojo/interop/protocols/dns/dnsquestion.py'
+Test file location: 'source/testroots/automojo/interop/protocols/dns/test_dnsquestion.py'
+
+# Coding Standards
+The code in this repository is meant to be utilized by testing tools and test frameworks.  Therefore, the code must prioritize:
+
+*  debuggability over performance
+*  readability over conciseness
+
+For all the code in this repository, follow the coding standards specified at [Coding Standards](userguide/10-00-coding-standards.rst)
+
+# Writing Tests
+
+A 'testbase' test takes the form of a function with a 'test_' prefix like so:
+
+```
+def test_something():
+    return
+```
+
+If a test raises an AssertionError, then it checked something and the check failed.  That is a Failure.  If the test raises any other exception, then the test framework treats that as an Error much like the 'unittest' framework does.
+
+You can create resource factories.
+
+```
+@testbase.register.resource_factory()
+def create_landscape(constraints={}) -> Generator[Landscape, None, None]:
+    """
+        Creates the global :class:`Landscape` instance.
+
+        :param constraints: Optional dictionary of constraints used while constructing the Landscape.
+
+        :returns: A generator yielding the Landscape object.
+    """
+    lscape = LandscapeSingleton()
+    yield lscape
+```
+
+You can create resources using the factories in a scope in the test tree.  Resources have scope for every test below where they are declared.
+
+```
+testbase.originate.parameter(create_landscape, identifier='lscape')
+```
+
+To use a resource in a descendant test scope, just reference it by name in the test function signature like:
+
+```
+def test_use_landscape(lscape: Landscape):
+
+    blah = lscape.get_something()
+    testbase.assert_equal(blah is not None, True)
+    return
+
+```
+
+The test tree should only contain resource origination declarations and tests.  It should not contain factories unless the usage of the factory is very isolated.  It is preferable to place factories in a folder such as a factory that creates the AutomationPodSimple object might be located at 'source/testroots/automojo/testshared/factories/automationpods/automationpodsimple.py'
+
+# Evaluating Test Results
+There is a machine processable JSOS stream file in the output folder.
+
+"*outputfolder*/testrun_results_stream.jsos"
+
+JSOS (JSON Object Stream) consists of a stream of JSON objects seperated by the the ASCII record seperator character.  When a
+test starts it writes a preview to the stream.  The test preview has a 'result' equal to 'UNSET'.  Example Preview:
+
+```
+{
+    "name": "automojo.tests.singlehost.interop.protocols.dns.test_dnsaddress#test_write_passes_address",
+    "monikers": [],
+    "pivots": {},
+    "instance": "abb868e4-ce97-4bae-b0af-715da0d61d92",
+    "parent": "5aad244e-41dc-438f-97a6-bd8365cccdd2",
+    "rtype": "TEST",
+    "result": "UNSET",
+    "start": "2025-07-15T22:07:03.275239",
+    "stop": ""
+}
+```
+
+When a test finishes it writes a result to the stream.  A test result will always have a 'detail' attribute. Example Result:
+
+```
+{
+    "name": "automojo.tests.singlehost.interop.protocols.dns.test_dnsaddress#test_write_passes_address",
+    "monikers": [],
+    "pivots": {},
+    "instance": "abb868e4-ce97-4bae-b0af-715da0d61d92",
+    "parent": "5aad244e-41dc-438f-97a6-bd8365cccdd2",
+    "rtype": "TEST",
+    "result": "PASSED",
+    "start": "2025-07-15T22:07:03.275239",
+    "stop": "2025-07-15T22:07:03.276034",
+    "detail": {
+        "errors": [],
+        "failures": [],
+        "warnings": []
+    }
+}
+```
+
+# Environment Setup
+
+## Codex Container Setup
+When work is being done on this repository using the Codex web environment.  Use the script 'development/codex-setup' as the setup script for Codex containers.
+
+## Development Environments
+When checking out the code for this repository in order to test changes, agents must:
+
+* run the 'repository-setup/rehome-repository' script.  It creates a needed '.env' file.
+* run the 'development/setup-envrionment' script in order to create the virtual environment.
+
+# Project Specific Rules
+
+
+# Pull Request Guidelines
+
+
+# Packaging
+Currently, this package is utilized using a reference to the github repository.  It is currently not published.
