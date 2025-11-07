@@ -1,5 +1,5 @@
 =================================
-Automation Mojo - UPnP Extensions
+Automation Mojo - UPnP Interop Extensions
 =================================
 Package that implements the protocol extension and landscaping extensions for UPNP interop
 
