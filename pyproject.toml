@@ -1,6 +1,6 @@
 [tool.poetry]
-name = "automojo-ext-upnp"
-description = "Automation Mojo - Upnp Extensions"
+name = "automojo-interop-ext-upnp"
+description = "Automation Mojo - Upnp InterOp Extensions"
 version = "0.0.1"
 authors = []
 readme = "README.rst"
