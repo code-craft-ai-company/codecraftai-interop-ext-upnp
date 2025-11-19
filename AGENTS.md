@@ -5,7 +5,7 @@ AI Agents working in this repository should refer to themselves as an agent name
 
 
 # Testing Conventions
-The 'automojo-ext-upnp' package repository utilizes the 'testbase' framework in order to run tests.  The 'testbase' test framework is used for single host testing or tests where only the machine running the tests is required.
+The 'automojo-interop-ext-upnp' package repository utilizes the 'testbase' framework in order to run tests.  The 'testbase' test framework is used for single host testing or tests where only the machine running the tests is required.
 
 Test are organized at the lowest level by resource configuration.  For example, all the single host tests for this package are in the folder 'source/testroots/automojo/tests/singlehost/interop' or 'source/testroots/automojo/tests/singlehost/landscaping' depending on the module path of the code under test.
 
