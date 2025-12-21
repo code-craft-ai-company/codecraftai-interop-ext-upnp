@@ -47,7 +47,7 @@ automojo-xmodules = {git = "https://github.com/automationmojo/automojo-xmodules.
 type = "git"
 url = "https://github.com/automationmojo/automojo-credentials.git"
 reference = "main"
-resolved_reference = "e5ed757932ccdf13da50193d90a05a953f508725"
+resolved_reference = "a798d9aa14f723a5bbef97863e2c23210370d4fc"
 
 [[package]]
 name = "automojo-dataprofiles"
@@ -69,7 +69,7 @@ automojo-xmodules = {git = "https://github.com/automationmojo/automojo-xmodules.
 type = "git"
 url = "https://github.com/automationmojo/automojo-dataprofiles.git"
 reference = "main"
-resolved_reference = "7b7a5261731c456b4ac91dbc7abebad719ffe855"
+resolved_reference = "719ccdb1544f85387e05a2a9d881fb5c63073534"
 
 [[package]]
 name = "automojo-errors"
@@ -145,7 +145,7 @@ rpyc = "^6.0.1"
 type = "git"
 url = "https://github.com/automationmojo/automojo-interop.git"
 reference = "main"
-resolved_reference = "06b6e14be24189a0815ef16bb4f0d6a9ba5ceb78"
+resolved_reference = "097bcf7c06f632070c94f728a3a6485f71dd227b"
 
 [[package]]
 name = "automojo-landscaping"
@@ -171,7 +171,7 @@ automojo-waiting = {git = "https://github.com/automationmojo/automojo-waiting.gi
 type = "git"
 url = "https://github.com/automationmojo/automojo-landscaping.git"
 reference = "main"
-resolved_reference = "64b7f2abe3e36b3c79b32ce239c37e31ebc7089d"
+resolved_reference = "f97681ed0e5258ad91f6ee528de988fb8c86d7a3"
 
 [[package]]
 name = "automojo-networking"
@@ -216,7 +216,7 @@ debugpy = "^1.8.12"
 type = "git"
 url = "https://github.com/automationmojo/automojo-runtime.git"
 reference = "main"
-resolved_reference = "35c7c8237ae67009449df0e2f168d48b98231259"
+resolved_reference = "0be8fd960cd060887f16fd1cf6c0a0960e9333d8"
 
 [[package]]
 name = "automojo-testbase"
@@ -242,7 +242,7 @@ click = "^8.1.8"
 type = "git"
 url = "https://github.com/automationmojo/automojo-testbase.git"
 reference = "main"
-resolved_reference = "1b7158ca5d17deb532f6ea4be60ced9c62467428"
+resolved_reference = "6cf359782b91ac5c12b15af0416fbe68f50e54ab"
 
 [[package]]
 name = "automojo-this-app"
