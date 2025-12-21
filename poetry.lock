@@ -26,7 +26,7 @@ pymongo = ["pymongo (>=4.13.2,<5.0.0)"]
 type = "git"
 url = "https://github.com/automationmojo/automojo-configuration.git"
 reference = "main"
-resolved_reference = "8dc33eec5dfd0954e74bf209830a09be6945f838"
+resolved_reference = "a7779abc155b5c37e5ec23338224b06e59ace4dc"
 
 [[package]]
 name = "automojo-credentials"
@@ -216,7 +216,7 @@ debugpy = "^1.8.12"
 type = "git"
 url = "https://github.com/automationmojo/automojo-runtime.git"
 reference = "main"
-resolved_reference = "0be8fd960cd060887f16fd1cf6c0a0960e9333d8"
+resolved_reference = "25953be8a06d6fd3cdec4e79837351e8986f304d"
 
 [[package]]
 name = "automojo-testbase"
