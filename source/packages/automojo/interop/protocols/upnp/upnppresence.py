@@ -21,6 +21,7 @@ import socket
 import threading
 import uuid
 import weakref
+from urllib.parse import urlparse
 
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -856,15 +857,18 @@ class UpnpPresence:
             errmsg = f"No callback url found for ifname={ifname}"
             raise RuntimeError(errmsg) from None
 
-        headers = { "HOST": host_ip, "User-Agent": UPNP_HEADERS.USER_AGENT}
+        parsed_url = urlparse(subscribe_url)
+        host_header = parsed_url.netloc or parsed_url.hostname or host_ip
+
+        headers = { "HOST": host_header, "User-Agent": UPNP_HEADERS.USER_AGENT}
         if renew:
             headers["SID"] = sid
             if subscribe_timeout_secs is not None:
-                headers["TIMEOUT"] = "Seconds-%s" % subscribe_timeout_secs
+                headers["TIMEOUT"] = "Second-%s" % subscribe_timeout_secs
         else:
             headers.update({"CALLBACK": callback_url, "NT": "upnp:event"})
             if subscribe_timeout_secs is not None:
-                headers["TIMEOUT"] = "Seconds-%s" % subscribe_timeout_secs
+                headers["TIMEOUT"] = "Second-%s" % subscribe_timeout_secs
 
         if custom_headers is not None:
             headers.update(custom_headers)
@@ -929,7 +933,10 @@ class UpnpPresence:
             :param custom_headers: A optional set of custom headers to use when creating the subscription
         """
 
-        headers = { "HOST": host_ip, "User-Agent":  UPNP_HEADERS.USER_AGENT, "SID": subscription_id}
+        parsed_url = urlparse(subscribe_url)
+        host_header = parsed_url.netloc or parsed_url.hostname or host_ip
+
+        headers = { "HOST": host_header, "User-Agent":  UPNP_HEADERS.USER_AGENT, "SID": subscription_id}
 
         if custom_headers is not None:
             headers.update(custom_headers)
