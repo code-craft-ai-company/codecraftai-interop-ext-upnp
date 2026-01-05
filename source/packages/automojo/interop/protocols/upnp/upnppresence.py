@@ -923,6 +923,18 @@ class UpnpPresence:
             ctxmsg = "Error while unsubscribing from service."
             raise_for_http_status(resp.status_code, resp.content, ctxmsg)
 
+        removal_reason = "UNSUBSCRIBE acknowledged" if resp.status_code == 200 else "subscription already expired"
+        removed = False
+
+        self._lock.acquire()
+        try:
+            removed = subscription_id in self._subscription_to_callback
+            self._subscription_to_callback.pop(subscription_id, None)
+        finally:
+            self._lock.release()
+
+        logger.debug("Subscription cleanup sid=%s removed=%s reason=%s", subscription_id, removed, removal_reason)
+
         return
 
 
@@ -1386,5 +1398,4 @@ class UpnpPresence:
         )
 
         return
-
 
