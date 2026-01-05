@@ -24,7 +24,7 @@ import weakref
 
 from xml.etree.ElementTree import Element as XmlElement
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import requests
 
@@ -427,10 +427,8 @@ class UpnpServiceProxy(EventedVariableSink):
         self.device.unsubscribe_to_events(self)
         sub_id, sub_expires = self.device.subscribe_to_events(self, renew=True)
 
-        for _ in self.yield_state_lock():
-            self._subscription_id = sub_id
-            self._subscription_expiration = sub_expires
-        
+        self._update_subscription_details(sub_id, sub_expires)
+
         return
 
     def trigger_auto_subscribe_from_variable(self, varkey: str):
@@ -454,6 +452,23 @@ class UpnpServiceProxy(EventedVariableSink):
             self._subscription_id = None
             self._subscription_expiration = None
         
+        return
+
+    def _update_subscription_details(self, sub_id: Optional[str], sub_expires: Optional[datetime]) -> None:
+        """
+            Updates the stored subscription information and refreshes the expiration for all event variables.
+
+            :param sub_id: The subscription identifier returned by the event sink.
+            :param sub_expires: The expiration timestamp associated with the subscription.
+        """
+
+        for _ in self.yield_state_lock():
+            self._subscription_id = sub_id
+            self._subscription_expiration = sub_expires
+
+            for varobj in self._evented_variables.values():
+                varobj._expires = sub_expires
+
         return
 
     def _create_default_variable(self, event_name: str, data_type: Optional[str] = None, default: Optional[str] = None, allowed_list: Optional[list] = None, evented: bool=True):

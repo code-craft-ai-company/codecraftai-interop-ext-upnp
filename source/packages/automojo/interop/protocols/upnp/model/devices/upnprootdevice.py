@@ -476,10 +476,12 @@ class UpnpRootDevice(UpnpDeviceBase):
 
                 with self._device_lock:
                     if sub_sid is not None:
+                        service._update_subscription_details(sub_sid, sub_expires)
                         self._sid_to_service_lookup[sub_sid] = service
                         self._subscriptions[service_type] = (sub_sid, sub_expires)
                         self._register_subscription_mapping(sub_sid)
                     else:
+                        service.invalidate_subscription()
                         if service_type in self._subscriptions:
                             del self._subscriptions[service_type]
 
@@ -497,8 +499,6 @@ class UpnpRootDevice(UpnpDeviceBase):
             if subscription_id is None:
                 subscription_id = service.subscriptionId
 
-            service._clear_subscription()
-
             presence = self.presence
             if presence is None:
                 raise RuntimeError("Presence reference was lost.")
@@ -508,6 +508,7 @@ class UpnpRootDevice(UpnpDeviceBase):
 
             custom_headers = self.get_custom_subscribe_headers()
             presence.service_unsubscribe(host_ip, subscribe_url, subscription_id, custom_headers=custom_headers)
+            service.invalidate_subscription()
 
             with self._device_lock:
                 if subscription_id in self._sid_to_service_lookup:
