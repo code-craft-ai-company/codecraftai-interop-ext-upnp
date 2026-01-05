@@ -424,10 +424,12 @@ class UpnpServiceProxy(EventedVariableSink):
         """
             Called in order to renew the subscription to the
         """
-        self.device.unsubscribe_to_events(self)
         sub_id, sub_expires = self.device.subscribe_to_events(self, renew=True)
 
-        self._update_subscription_details(sub_id, sub_expires)
+        if sub_id is not None:
+            self._update_subscription_details(sub_id, sub_expires)
+        else:
+            self._clear_subscription()
 
         return
 

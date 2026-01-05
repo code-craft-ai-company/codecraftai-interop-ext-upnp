@@ -826,7 +826,7 @@ class UpnpPresence:
 
 
     def service_subscribe(self, host_ip: str, subscribe_url: str, subscribe_timeout_secs: Optional[int], service_event_callback: Callable,
-                        custom_headers: Optional[Dict[str, str]] = None) -> Union[Tuple[None, None], Tuple[str, datetime]]:
+                        custom_headers: Optional[Dict[str, str]] = None, sid: Optional[str] = None, renew: bool = False) -> Union[Tuple[None, None], Tuple[str, datetime]]:
         """
             Subscribe to a remote service.
 
@@ -835,6 +835,8 @@ class UpnpPresence:
             :param subscribe_timeout_secs: Optional timeout in seconds for the subscription.
             :param service_event_callback: The callback that is called when events occur for the subscription.
             :param custom_headers: A optional set of custom headers to use when creating the subscription
+            :param sid: Optional subscription identifier used when renewing an existing subscription.
+            :param renew: Indicates if this is a renewal request.
 
             :returns: A tuple with the 'sid' subscription id of the new subscription and the expiration the subscription.
             :raises ValueError: If the ``TIMEOUT`` header contains an invalid value.
@@ -843,6 +845,10 @@ class UpnpPresence:
         sub_sid = None
         sub_expires = None
 
+        if renew and sid is None:
+            errmsg = "A 'sid' must be provided when renewing a subscription."
+            raise ValueError(errmsg)
+
         ifname = get_interface_for_ip(host_ip)
 
         callback_url = self.form_callback_url_for_interface(ifname)
@@ -850,9 +856,15 @@ class UpnpPresence:
             errmsg = f"No callback url found for ifname={ifname}"
             raise RuntimeError(errmsg) from None
 
-        headers = { "HOST": host_ip, "User-Agent": UPNP_HEADERS.USER_AGENT, "CALLBACK": callback_url, "NT": "upnp:event"}
-        if subscribe_timeout_secs is not None:
-            headers["TIMEOUT"] = "Seconds-%s" % subscribe_timeout_secs
+        headers = { "HOST": host_ip, "User-Agent": UPNP_HEADERS.USER_AGENT}
+        if renew:
+            headers["SID"] = sid
+            if subscribe_timeout_secs is not None:
+                headers["TIMEOUT"] = "Seconds-%s" % subscribe_timeout_secs
+        else:
+            headers.update({"CALLBACK": callback_url, "NT": "upnp:event"})
+            if subscribe_timeout_secs is not None:
+                headers["TIMEOUT"] = "Seconds-%s" % subscribe_timeout_secs
 
         if custom_headers is not None:
             headers.update(custom_headers)
@@ -889,6 +901,8 @@ class UpnpPresence:
                     sub_expires = datetime.now() + timedelta(seconds=sub_timeout)
                     self._lock.acquire()
                     try:
+                        if renew and sid is not None and sid != sub_sid:
+                            self._subscription_to_callback.pop(sid, None)
                         self._subscription_to_callback[sub_sid] = service_event_callback
                     finally:
                         self._lock.release()
@@ -896,6 +910,8 @@ class UpnpPresence:
             except KeyError as kerr:
                 errmsg = f"Event subscription response was missing in '{nxtheader}' header."
                 raise KeyError(errmsg) from kerr
+        elif renew and resp.status_code in (404, 412):
+            logger.debug("Subscription renewal failed with status %s, attempting recovery.", resp.status_code)
         else:
             ctxmsg = f"While attempting to subscribe to subscribe_url={subscribe_url}"
             raise_for_http_status(resp.status_code, resp.content, ctxmsg)
@@ -1398,4 +1414,3 @@ class UpnpPresence:
         )
 
         return
-
