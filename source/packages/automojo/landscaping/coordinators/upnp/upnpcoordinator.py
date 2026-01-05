@@ -989,7 +989,20 @@ class UpnpCoordinator(CoordinatorBase):
         cbbuffer.truncate(0)
         cbbuffer.seek(0)
 
-        req_body = request[headers_length:]
+        if headers_length is None:
+            self.logger.error("Callback message missing header terminator. claddr=%s", claddr)
+            return
+
+        if req_headers is None:
+            self.logger.error("Callback message missing headers. claddr=%s", claddr)
+            return
+
+        req_body_bytes = request[headers_length:]
+        try:
+            req_body = req_body_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            self.logger.error("Failed to decode subscription callback body as UTF-8. claddr=%s", claddr)
+            req_body = req_body_bytes.decode("utf-8", errors="replace")
 
         capture_to = None
         self._coord_lock.acquire()
@@ -1001,7 +1014,7 @@ class UpnpCoordinator(CoordinatorBase):
 
         if capture_to is not None:
             for cc in capture_to:
-                cc.append_capture(req_headers, req_body)
+                cc.append_capture(req_headers, req_body_bytes)
 
         if "SID" in req_headers:
             sid = req_headers["SID"]
@@ -1030,7 +1043,7 @@ class UpnpCoordinator(CoordinatorBase):
                 dbgmsg_lines.append("    {}:{}".format(hdr_key, hdr_val))
 
             dbgmsg_lines.append("REQUEST BODY:")
-            dbgmsg_lines.append(req_body.decode("utf-8"))
+            dbgmsg_lines.append(req_body)
 
             dbgmsg = os.linesep.join(dbgmsg_lines)
 
