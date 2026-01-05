@@ -440,14 +440,18 @@ class UpnpRootDevice(UpnpDeviceBase):
             service_type = service.SERVICE_TYPE
 
             new_subscription = False
+            current_sid = None
+            current_expires = None
             with self._device_lock:
                 if service_type not in self._subscriptions:
                     new_subscription = True
                     self._subscriptions[service_type] = (None, None)
                 else:
-                    sub_sid, sub_expires = self._subscriptions[service_type]
-                    if sub_sid is None and sub_expires is None:
+                    current_sid, current_expires = self._subscriptions[service_type]
+                    if current_sid is None and current_expires is None:
                         new_subscription = True
+
+            sub_sid, sub_expires = current_sid, current_expires
 
             check_time = datetime.now() + timedelta(seconds=TIMEDELTA_RENEWAL_WINDOW)
             if sub_expires is not None and check_time > sub_expires:
@@ -466,21 +470,49 @@ class UpnpRootDevice(UpnpDeviceBase):
                 host_ip = self._primary_route[MSearchRouteKeys.IP]
 
                 custom_headers = self.get_custom_subscribe_headers()
-                sub_sid, sub_expires = presence.service_subscribe(
-                    host_ip,
-                    subscribe_url,
-                    timeout,
-                    self.process_subscription_callback,
-                    custom_headers=custom_headers
-                )
+                renewal_attempted = False
+                if renew and current_sid is not None:
+                    renewal_attempted = True
+                    sub_sid, sub_expires = presence.service_subscribe(
+                        host_ip,
+                        subscribe_url,
+                        timeout,
+                        self.process_subscription_callback,
+                        custom_headers=custom_headers,
+                        sid=current_sid,
+                        renew=True
+                    )
+
+                if sub_sid is None and renewal_attempted:
+                    sub_sid, sub_expires = presence.service_subscribe(
+                        host_ip,
+                        subscribe_url,
+                        timeout,
+                        self.process_subscription_callback,
+                        custom_headers=custom_headers
+                    )
+
+                if sub_sid is None and not renewal_attempted:
+                    sub_sid, sub_expires = presence.service_subscribe(
+                        host_ip,
+                        subscribe_url,
+                        timeout,
+                        self.process_subscription_callback,
+                        custom_headers=custom_headers
+                    )
 
                 with self._device_lock:
                     if sub_sid is not None:
+                        old_sid, _ = self._subscriptions.get(service_type, (None, None))
+                        if old_sid is not None and old_sid != sub_sid:
+                            if old_sid in self._sid_to_service_lookup:
+                                del self._sid_to_service_lookup[old_sid]
+                            self._unregister_subscription_mapping(old_sid)
                         service._update_subscription_details(sub_sid, sub_expires)
                         self._sid_to_service_lookup[sub_sid] = service
                         self._subscriptions[service_type] = (sub_sid, sub_expires)
                         self._register_subscription_mapping(sub_sid)
-                    else:
+                    elif new_subscription:
                         service.invalidate_subscription()
                         if service_type in self._subscriptions:
                             del self._subscriptions[service_type]
