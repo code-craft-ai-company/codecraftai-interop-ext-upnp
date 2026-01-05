@@ -431,7 +431,7 @@ class UpnpCoordinator(CoordinatorBase):
 
         return device_inst
 
-    def register_subscription_for_device(self, sid: str, device: LandscapeDevice):
+    def register_subscription_for_device(self, sid: str, device: UpnpRootDevice):
         """
             Registers a service instance for event callbacks via a 'sid'.
 
@@ -442,6 +442,22 @@ class UpnpCoordinator(CoordinatorBase):
         self._coord_lock.acquire()
         try:
             self._cl_subscription_id_to_device[sid] = device
+        finally:
+            self._coord_lock.release()
+
+        return
+
+    def unregister_subscription_for_device(self, sid: str):
+        """
+            Unregisters a service instance from event callbacks when a subscription ends.
+
+            :param sid: The service subscription id to remove.
+        """
+
+        self._coord_lock.acquire()
+        try:
+            if sid in self._cl_subscription_id_to_device:
+                del self._cl_subscription_id_to_device[sid]
         finally:
             self._coord_lock.release()
 
