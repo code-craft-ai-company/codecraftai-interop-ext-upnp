@@ -181,6 +181,13 @@ class UpnpRootDevice(UpnpDeviceBase):
         self._last_byebye = datetime.min
         self._available = False
 
+        self._coordinator_ref = None
+        self._basedevice_ref = None
+        self._extid = None
+        self._location = None
+        self._configinfo = None
+        self._deviceinfo = None
+
         return
 
     @property
@@ -303,6 +310,26 @@ class UpnpRootDevice(UpnpDeviceBase):
         return self._presence_ref()
 
     @property
+    def coordinator(self):
+        """
+            Returns the coordinator associated with this device if one is registered.
+        """
+        coord = None
+        if self._coordinator_ref is not None:
+            coord = self._coordinator_ref()
+        return coord
+
+    @property
+    def basedevice(self):
+        """
+            Returns the landscape base device that this UPnP device extends.
+        """
+        basedev = None
+        if self._basedevice_ref is not None:
+            basedev = self._basedevice_ref()
+        return basedev
+
+    @property
     def primary_route(self):
         """
             Returns the primary rout for this UPNP devices.
@@ -322,6 +349,20 @@ class UpnpRootDevice(UpnpDeviceBase):
             The 'SERVER' key specified in the MSEARCH response for this device.
         """
         return self._server
+
+    @property
+    def extid(self) -> str:
+        """
+            Returns the coordinator assigned identifier for this device.
+        """
+        return self._extid
+
+    @property
+    def location(self) -> str:
+        """
+            Returns the location URL where this device can be reached.
+        """
+        return self._location
 
     @property
     def services(self) -> List[UpnpServiceProxy]:
@@ -437,6 +478,7 @@ class UpnpRootDevice(UpnpDeviceBase):
                     if sub_sid is not None:
                         self._sid_to_service_lookup[sub_sid] = service
                         self._subscriptions[service_type] = (sub_sid, sub_expires)
+                        self._register_subscription_mapping(sub_sid)
                     else:
                         if service_type in self._subscriptions:
                             del self._subscriptions[service_type]
@@ -470,6 +512,7 @@ class UpnpRootDevice(UpnpDeviceBase):
             with self._device_lock:
                 if subscription_id in self._sid_to_service_lookup:
                     del self._sid_to_service_lookup[subscription_id]
+                self._unregister_subscription_mapping(subscription_id)
 
                 svc_type = service.SERVICE_TYPE
                 if svc_type in self._subscriptions:
@@ -517,6 +560,26 @@ class UpnpRootDevice(UpnpDeviceBase):
             self._device_lock.release()
 
         return
+    
+    def initialize(self, coord_ref: weakref.ReferenceType, basedevice_ref: weakref.ReferenceType, extid: str, location: str, configinfo: dict, deviceinfo: dict):
+        """
+            Initializes the device with coordinator and landscape references.
+
+            :param coord_ref: Weak reference to the coordinator managing this device.
+            :param basedevice_ref: Weak reference to the landscape device this UPnP device extends.
+            :param extid: The identifier associated with this device instance.
+            :param location: The location URL for the device description.
+            :param configinfo: Configuration information for the device.
+            :param deviceinfo: Device discovery information.
+        """
+
+        self._coordinator_ref = coord_ref
+        self._basedevice_ref = basedevice_ref
+        self._extid = extid
+        self._location = location
+        self._configinfo = configinfo
+        self._deviceinfo = deviceinfo
+        return
 
     def mark_byebye(self):
         """
@@ -540,7 +603,8 @@ class UpnpRootDevice(UpnpDeviceBase):
 
             if self._available:
 
-                device_identity = self.basedevice.identity
+                basedev = self.basedevice
+                device_identity = basedev.identity if basedev is not None else self.USN_DEV
 
                 self._available = False
 
@@ -561,6 +625,7 @@ class UpnpRootDevice(UpnpDeviceBase):
                         device_identity, svc_type, reason
                     )
                     logger.debug(dbgmsg)
+                    self._unregister_subscription_mapping(sub_sid)
                     del self._subscriptions[svc_type]
 
         finally:
@@ -600,6 +665,24 @@ class UpnpRootDevice(UpnpDeviceBase):
 
                 service._update_event_variables(sender_ip, self.USN_DEV, propertyNodeList) # pylint: disable=protected-access
 
+        return
+    
+    def _register_subscription_mapping(self, sid: str):
+        """
+            Registers the subscription with the coordinator so callbacks can be routed.
+        """
+        coord = self.coordinator
+        if coord is not None and sid is not None:
+            coord.register_subscription_for_device(sid, self)
+        return
+
+    def _unregister_subscription_mapping(self, sid: str):
+        """
+            Unregisters the subscription from the coordinator so stale entries are removed.
+        """
+        coord = self.coordinator
+        if coord is not None and sid is not None:
+            coord.unregister_subscription_for_device(sid)
         return
 
     def query_device_description(self):
