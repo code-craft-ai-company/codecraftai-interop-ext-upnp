@@ -954,6 +954,27 @@ class UpnpPresence:
         return
 
 
+    def discard_subscription_callback(self, subscription_id: str):
+        """
+            Remove a subscription callback handler without issuing an unsubscribe request.
+
+            :param subscription_id: The subscription identifier to remove from the callback table.
+        """
+
+        removed = False
+
+        self._lock.acquire()
+        try:
+            removed = subscription_id in self._subscription_to_callback
+            self._subscription_to_callback.pop(subscription_id, None)
+        finally:
+            self._lock.release()
+
+        logger.debug("Subscription callback discard sid=%s removed=%s", subscription_id, removed)
+
+        return
+
+
     def start(self):
         """
             Start background threads for presence monitoring and discovery.

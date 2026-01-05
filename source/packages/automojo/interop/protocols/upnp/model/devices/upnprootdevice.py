@@ -176,6 +176,8 @@ class UpnpRootDevice(UpnpDeviceBase):
         self._subscriptions: Dict[StrSvcType, Tuple[StrSvcId, datetime]] = {}
         self._sid_to_service_lookup: Dict[str, UpnpServiceProxy] = {}
         self._variables = {}
+        self._subscription_scheduler_stop = threading.Event()
+        self._subscription_scheduler_thread: Optional[threading.Thread] = None
 
         self._last_alive = datetime.min
         self._last_byebye = datetime.min
@@ -629,6 +631,10 @@ class UpnpRootDevice(UpnpDeviceBase):
                            of a byebye message being received.
         """
 
+        subscription_ids = []
+        additional_sids: List[str] = []
+        stop_scheduler = self._subscription_scheduler_thread is not None
+
         self._device_lock.acquire()
         try:
             if byebye:
@@ -640,7 +646,9 @@ class UpnpRootDevice(UpnpDeviceBase):
                 device_identity = basedev.identity if basedev is not None else self.USN_DEV
 
                 self._available = False
+                stop_scheduler = True
 
+                additional_sids = [sid for sid in self._sid_to_service_lookup.keys()]
                 subscription_type_list = [st for st in self._subscriptions.keys()]
 
                 for svc_type in subscription_type_list:
@@ -659,10 +667,23 @@ class UpnpRootDevice(UpnpDeviceBase):
                     )
                     logger.debug(dbgmsg)
                     self._unregister_subscription_mapping(sub_sid)
+                    if sub_sid is not None:
+                        subscription_ids.append(sub_sid)
+                        if sub_sid in self._sid_to_service_lookup:
+                            del self._sid_to_service_lookup[sub_sid]
                     del self._subscriptions[svc_type]
+
+                self._sid_to_service_lookup.clear()
 
         finally:
             self._device_lock.release()
+
+        if stop_scheduler:
+            self._stop_subscription_scheduler()
+
+        cleanup_ids = list(set(subscription_ids + additional_sids))
+        if len(cleanup_ids) > 0:
+            self._cleanup_presence_callbacks(cleanup_ids)
 
         return
 
@@ -731,7 +752,15 @@ class UpnpRootDevice(UpnpDeviceBase):
         Enable or disable automatic service subscriptions.
         """
 
-        self._auto_subscribe = val
+        if val:
+            self._auto_subscribe = True
+            self.subscribe_to_all_services(factory)
+            self._start_subscription_scheduler()
+        else:
+            self._auto_subscribe = False
+            self._stop_subscription_scheduler()
+            self._unsubscribe_all_services()
+
         return
 
     def subscribe_to_all_services(self, factory: Optional["UpnpDeviceFactory"] = None):
@@ -749,12 +778,206 @@ class UpnpRootDevice(UpnpDeviceBase):
             if svc is not None:
                 try:
                     self.subscribe_to_events(svc)
-                except:
+                except Exception:  # pylint: disable=broad-exception-caught
                     errmsg = traceback.format_exc()
                     logger.debug(errmsg)
             else:
                 errmsg = "Lookup service failed for mfg={} svc={}".format(self.MANUFACTURER, svc_name)
                 logger.debug(errmsg)
+
+        return
+
+    def _cleanup_presence_callbacks(self, subscription_ids: List[str]):
+        """
+            Remove subscription callbacks from the presence object without contacting the device.
+        """
+        presence = self.presence
+        if presence is None:
+            return
+
+        for sid in subscription_ids:
+            try:
+                presence.discard_subscription_callback(sid)
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.debug("Failed to discard subscription callback sid=%s", sid)
+
+        return
+
+    def _find_service_for_subscription(self, service_type: StrSvcType, sid: Optional[str]) -> Optional[UpnpServiceProxy]:
+        """
+            Locate the service proxy associated with a subscription entry.
+        """
+        service = None
+
+        self._device_lock.acquire()
+        try:
+            if sid is not None and sid in self._sid_to_service_lookup:
+                service = self._sid_to_service_lookup[sid]
+            else:
+                for svc_obj in self._services.values():
+                    if svc_obj.SERVICE_TYPE == service_type:
+                        service = svc_obj
+                        break
+        finally:
+            self._device_lock.release()
+
+        return service
+
+    def _compute_scheduler_wait(self) -> float:
+        """
+            Determine how long the scheduler should wait before checking subscriptions again.
+        """
+
+        wait_seconds = TIMEDELTA_RENEWAL_WINDOW
+        now = datetime.now()
+
+        self._device_lock.acquire()
+        try:
+            if not self._auto_subscribe or len(self._subscriptions) == 0:
+                wait_seconds = TIMEDELTA_RENEWAL_WINDOW
+            else:
+                for _, (_, sub_expires) in self._subscriptions.items():
+                    if sub_expires is None:
+                        wait_seconds = min(wait_seconds, TIMEDELTA_RENEWAL_WINDOW / 2)
+                        continue
+
+                    renew_in = (sub_expires - now).total_seconds() - TIMEDELTA_RENEWAL_WINDOW
+                    if renew_in < 0:
+                        renew_in = 0
+
+                    wait_seconds = min(wait_seconds, max(renew_in, 1.0))
+        finally:
+            self._device_lock.release()
+
+        return max(wait_seconds, 1.0)
+
+    def _renew_subscriptions(self):
+        """
+            Iterate through active subscriptions and renew them ahead of expiry.
+        """
+        renew_targets: List[Tuple[StrSvcType, str, datetime, UpnpServiceProxy]] = []
+
+        now = datetime.now()
+        self._device_lock.acquire()
+        try:
+            if not self._auto_subscribe or not self._available:
+                return
+
+            for svc_type, (sid, expires) in self._subscriptions.items():
+                if sid is None or expires is None:
+                    continue
+
+                if now + timedelta(seconds=TIMEDELTA_RENEWAL_WINDOW) >= expires:
+                    svc_obj = self._find_service_for_subscription(svc_type, sid)
+                    if svc_obj is not None:
+                        renew_targets.append((svc_type, sid, expires, svc_obj))
+        finally:
+            self._device_lock.release()
+
+        for svc_type, sid, expires, svc_obj in renew_targets:
+            try:
+                logger.debug(
+                    "Renewing subscription sid=%s svc=%s (expires %s)", sid, svc_type, expires.isoformat()
+                )
+                svc_obj.renew_subscription()
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.debug("Failed to renew subscription sid=%s svc=%s", sid, svc_type)
+
+        return
+
+    def _start_subscription_scheduler(self):
+        """
+            Start the lightweight scheduler that keeps subscriptions renewed.
+        """
+        self._device_lock.acquire()
+        try:
+            if self._subscription_scheduler_thread is not None and self._subscription_scheduler_thread.is_alive():
+                return
+
+            self._subscription_scheduler_stop.clear()
+
+            scheduler_thread = threading.Thread(
+                name=f"UpnpRootDevice-SubscriptionScheduler-{self.extid}",
+                target=self._subscription_scheduler_loop,
+                daemon=True
+            )
+            self._subscription_scheduler_thread = scheduler_thread
+            scheduler_thread.start()
+        finally:
+            self._device_lock.release()
+
+        return
+
+    def _stop_subscription_scheduler(self):
+        """
+            Stop the subscription renewal scheduler.
+        """
+        scheduler_thread = None
+
+        self._device_lock.acquire()
+        try:
+            self._subscription_scheduler_stop.set()
+            scheduler_thread = self._subscription_scheduler_thread
+            self._subscription_scheduler_thread = None
+        finally:
+            self._device_lock.release()
+
+        if scheduler_thread is not None and scheduler_thread.is_alive():
+            scheduler_thread.join(timeout=5.0)
+
+        return
+
+    def _subscription_scheduler_loop(self):
+        """
+            Loop that periodically checks subscriptions and renews them.
+        """
+        while not self._subscription_scheduler_stop.is_set():
+            wait_time = self._compute_scheduler_wait()
+            self._subscription_scheduler_stop.wait(wait_time)
+            if self._subscription_scheduler_stop.is_set():
+                break
+
+            try:
+                self._renew_subscriptions()
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.debug("Subscription scheduler encountered an error.")
+
+        return
+
+    def _unsubscribe_all_services(self):
+        """
+            Unsubscribe from all known services and clear subscription tracking.
+        """
+        subscription_entries: List[Tuple[StrSvcType, Optional[str]]] = []
+
+        self._device_lock.acquire()
+        try:
+            subscription_entries = [(svc_type, sid) for svc_type, (sid, _) in self._subscriptions.items()]
+        finally:
+            self._device_lock.release()
+
+        for svc_type, sid in subscription_entries:
+            svc_obj = self._find_service_for_subscription(svc_type, sid)
+            if svc_obj is None:
+                continue
+
+            if sid is not None:
+                try:
+                    self.events_unsubscribe(svc_obj, subscription_id=sid)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.debug("Failed to unsubscribe sid=%s svc=%s", sid, svc_type)
+            else:
+                svc_obj.invalidate_subscription()
+
+        subscription_ids = [sid for _, sid in subscription_entries if sid is not None]
+        self._cleanup_presence_callbacks(subscription_ids)
+
+        self._device_lock.acquire()
+        try:
+            self._subscriptions.clear()
+            self._sid_to_service_lookup.clear()
+        finally:
+            self._device_lock.release()
 
         return
 
