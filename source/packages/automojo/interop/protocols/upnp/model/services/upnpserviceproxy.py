@@ -75,7 +75,7 @@ class UpnpServiceProxy(EventedVariableSink):
         self._service_lock = threading.RLock()
 
         self._device_ref = None
-        self._service_description
+        self._service_description = None
 
         self._soap_processor = SoapProcessor()
 
