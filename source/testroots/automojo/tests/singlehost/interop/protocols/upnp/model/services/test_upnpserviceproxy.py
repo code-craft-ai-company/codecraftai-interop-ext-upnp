@@ -36,7 +36,7 @@ def test_renew_subscription_uses_renewal_path() -> None:
     testbase.assert_equal(len(device.unsubscribe_calls), 0)
     testbase.assert_equal(len(device.subscribe_calls), 1)
     testbase.assert_equal(device.subscribe_calls[0]["renew"], True)
-    testbase.assert_equal(proxy._subscription_id, "uuid:new")
+    testbase.assert_equal(proxy.subscription_id, "uuid:new")
     return
 
 
@@ -48,7 +48,7 @@ def test_renew_subscription_clears_state_on_failure() -> None:
 
     proxy.renew_subscription()
 
-    testbase.assert_equal(proxy._subscription_id, None)
-    testbase.assert_equal(proxy._subscription_expiration, None)
+    testbase.assert_equal(proxy.subscription_id, None)
+    testbase.assert_equal(proxy.subscription_expiration, None)
     testbase.assert_equal(len(device.subscribe_calls), 1)
     return
