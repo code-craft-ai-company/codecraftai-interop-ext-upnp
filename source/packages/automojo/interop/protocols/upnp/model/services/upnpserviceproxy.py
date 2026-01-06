@@ -123,6 +123,13 @@ class UpnpServiceProxy(EventedVariableSink):
         return self._subscription_id
 
     @property
+    def subscription_expiration(self) -> Optional[datetime]:
+        """
+            Returns the expiration timestamp for the active subscription, if any.
+        """
+        return self._subscription_expiration
+
+    @property
     def controlURL(self) -> str:
         """
             Returns the control URL that is used making calls on actions on a device service.
