@@ -531,7 +531,7 @@ class UpnpRootDevice(UpnpDeviceBase):
 
         if len(service.SERVICE_EVENT_VARIABLES) > 0:
             if subscription_id is None:
-                subscription_id = service.subscriptionId
+                subscription_id = service.subscription_id
 
             presence = self.presence
             if presence is None:

@@ -14,7 +14,7 @@ class DummyService:
 
     def __init__(self):
         self.eventSubURL = "/event"
-        self.subscriptionId = None
+        self._subscription_id = None
         self.updated = []
         self.invalidated = False
 
@@ -22,12 +22,16 @@ class DummyService:
         return "dummy"
 
     def _update_subscription_details(self, sid, expires):
-        self.subscriptionId = sid
+        self._subscription_id = sid
         self.updated.append((sid, expires))
 
     def invalidate_subscription(self):
         self.invalidated = True
-        self.subscriptionId = None
+        self._subscription_id = None
+
+    @property
+    def subscription_id(self):
+        return self._subscription_id
 
 
 def _build_root_device(presence, service: DummyService) -> UpnpRootDevice:
@@ -110,4 +114,29 @@ def test_events_subscribe_recovers_after_renewal_failure() -> None:
     testbase.assert_equal(device._sid_to_service_lookup.get("uuid:new"), service)
     testbase.assert_equal(service.invalidated, False)
     testbase.assert_equal(device._subscriptions[service.SERVICE_TYPE][0], "uuid:new")
+    return
+
+
+def test_events_unsubscribe_uses_subscription_property() -> None:
+    service = DummyService()
+    service._update_subscription_details("uuid:prop", datetime.now())
+
+    class RecordingPresence:
+        def __init__(self):
+            self.calls = []
+
+        def service_unsubscribe(self, host_ip, subscribe_url, subscription_id, custom_headers=None):
+            self.calls.append({"subscription_id": subscription_id, "host_ip": host_ip, "url": subscribe_url})
+
+    presence = RecordingPresence()
+    device = _build_root_device(presence, service)
+    device._subscriptions[service.SERVICE_TYPE] = (service.subscription_id, datetime.now())
+    device._sid_to_service_lookup[service.subscription_id] = service
+
+    device.events_unsubscribe(service)
+
+    testbase.assert_equal(len(presence.calls), 1)
+    testbase.assert_equal(presence.calls[0]["subscription_id"], "uuid:prop")
+    testbase.assert_equal(service.subscription_id, None)
+    testbase.assert_equal(device._subscriptions[service.SERVICE_TYPE][0], None)
     return
