@@ -559,6 +559,15 @@ class UpnpRootDevice(UpnpDeviceBase):
             if presence is None:
                 raise RuntimeError("Presence reference was lost.")
 
+            if subscription_id is None:
+                # Nothing to unsubscribe; ensure local state is cleared and exit early.
+                service.invalidate_subscription()
+                with self._device_lock:
+                    svc_type = service.SERVICE_TYPE
+                    if svc_type in self._subscriptions:
+                        self._subscriptions[svc_type] = (None, None)
+                return
+
             host_ip = self._primary_route[MSearchRouteKeys.IP]
             subscribe_url = urljoin(self.URLBase, service.eventSubURL)
 
