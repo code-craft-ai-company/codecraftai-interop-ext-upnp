@@ -94,6 +94,9 @@ class UpnpServiceProxy(EventedVariableSink):
         self._default_variables = {}
         self._create_default_variables_from_list()
 
+        self._subscription_id: Optional[str] = None
+        self._subscription_expiration: Optional[datetime] = None
+
         # Initialize the evented variable sink
         super().__init__(self.SERVICE_EVENT_VARIABLES, state_lock=self._service_lock, sink_prefix=self.SERVICE_TYPE, auto_subscribe=True)
 
@@ -111,6 +114,13 @@ class UpnpServiceProxy(EventedVariableSink):
             Returns the base URL for working with a service.
         """
         return self._baseURL
+
+    @property
+    def subscription_id(self) -> Optional[str]:
+        """
+            Returns the active subscription identifier for this service, if any.
+        """
+        return self._subscription_id
 
     @property
     def controlURL(self) -> str:
