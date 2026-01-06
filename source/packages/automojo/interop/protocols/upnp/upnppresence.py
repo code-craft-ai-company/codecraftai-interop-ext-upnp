@@ -864,11 +864,11 @@ class UpnpPresence:
         if renew:
             headers["SID"] = sid
             if subscribe_timeout_secs is not None:
-                headers["TIMEOUT"] = "Seconds-%s" % subscribe_timeout_secs
+                headers["TIMEOUT"] = "Second-%s" % subscribe_timeout_secs
         else:
             headers.update({"CALLBACK": callback_url, "NT": "upnp:event"})
             if subscribe_timeout_secs is not None:
-                headers["TIMEOUT"] = "Seconds-%s" % subscribe_timeout_secs
+                headers["TIMEOUT"] = "Second-%s" % subscribe_timeout_secs
 
         if custom_headers is not None:
             headers.update(custom_headers)
