@@ -62,7 +62,7 @@ from automojo.interop.protocols.upnp.model.description.serviceevidence import Se
 
 REGEX_NOTIFY_HEADER = re.compile("NOTIFY[ ]+[*/]+[ ]+HTTP/1")
 
-REGEX_SUBSCRIPTION_TIMEOUT = re.compile("^Second-([0-9]+|infinite)", flags=re.IGNORECASE)
+REGEX_SUBSCRIPTION_TIMEOUT = re.compile("^Seconds?-([0-9]+|infinite)", flags=re.IGNORECASE)
 
 logger = getEnhancedLogger()
 
@@ -864,11 +864,11 @@ class UpnpPresence:
         if renew:
             headers["SID"] = sid
             if subscribe_timeout_secs is not None:
-                headers["TIMEOUT"] = "Second-%s" % subscribe_timeout_secs
+                headers["TIMEOUT"] = "Seconds-%s" % subscribe_timeout_secs
         else:
             headers.update({"CALLBACK": callback_url, "NT": "upnp:event"})
             if subscribe_timeout_secs is not None:
-                headers["TIMEOUT"] = "Second-%s" % subscribe_timeout_secs
+                headers["TIMEOUT"] = "Seconds-%s" % subscribe_timeout_secs
 
         if custom_headers is not None:
             headers.update(custom_headers)
