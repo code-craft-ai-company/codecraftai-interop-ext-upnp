@@ -503,6 +503,12 @@ class UpnpRootDevice(UpnpDeviceBase):
                         custom_headers=custom_headers
                     )
 
+                if sub_sid is None and renewal_attempted and current_sid is not None:
+                    try:
+                        presence.discard_subscription_callback(current_sid)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        logger.debug("Failed to discard subscription callback sid=%s", current_sid)
+
                 with self._device_lock:
                     if sub_sid is not None:
                         old_sid, _ = self._subscriptions.get(service_type, (None, None))
@@ -518,6 +524,14 @@ class UpnpRootDevice(UpnpDeviceBase):
                         service.invalidate_subscription()
                         if service_type in self._subscriptions:
                             del self._subscriptions[service_type]
+                    else:
+                        service.invalidate_subscription()
+                        if current_sid is not None:
+                            if current_sid in self._sid_to_service_lookup:
+                                del self._sid_to_service_lookup[current_sid]
+                            self._unregister_subscription_mapping(current_sid)
+                        if service_type in self._subscriptions:
+                            self._subscriptions[service_type] = (None, None)
 
         return sub_sid, sub_expires
 
