@@ -509,10 +509,12 @@ class UpnpRootDevice(UpnpDeviceBase):
                     except Exception:  # pylint: disable=broad-exception-caught
                         logger.debug("Failed to discard subscription callback sid=%s", current_sid)
 
+                discard_sid = None
                 with self._device_lock:
                     if sub_sid is not None:
                         old_sid, _ = self._subscriptions.get(service_type, (None, None))
                         if old_sid is not None and old_sid != sub_sid:
+                            discard_sid = old_sid
                             if old_sid in self._sid_to_service_lookup:
                                 del self._sid_to_service_lookup[old_sid]
                             self._unregister_subscription_mapping(old_sid)
@@ -532,6 +534,12 @@ class UpnpRootDevice(UpnpDeviceBase):
                             self._unregister_subscription_mapping(current_sid)
                         if service_type in self._subscriptions:
                             self._subscriptions[service_type] = (None, None)
+
+                if discard_sid is not None:
+                    try:
+                        presence.discard_subscription_callback(discard_sid)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        logger.debug("Failed to discard subscription callback sid=%s", discard_sid)
 
         return sub_sid, sub_expires
 
