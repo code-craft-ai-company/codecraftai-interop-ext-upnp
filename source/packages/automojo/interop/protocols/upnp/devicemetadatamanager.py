@@ -63,25 +63,34 @@ class DeviceMetadataManager:
         if not os.path.exists(desc_filename):
             desc_filename = os.path.join(self._metadata_cache_root, device_cache_leaf)
 
-        with open(desc_filename, 'r') as ddf:
-            desc_content = ddf.read()
+        # Check if the file exists before attempting to open it
+        if not os.path.exists(desc_filename):
+            logger.warning(f"Device description file not found: {device_cache_leaf}")
+            return None
 
-            try:
-                default_namespaces = {"": UPNP_DEVICE1_NAMESPACE}
-                root_el = parse_xml_content(desc_content)
-                
-                spec_ver, manufacturer = DeviceDetailMapper.read_spec_version_and_manufacturer(root_el, default_namespaces)
-                
-                if spec_ver is not None and manufacturer is not None:
+        try:
+            with open(desc_filename, 'r') as ddf:
+                desc_content = ddf.read()
 
-                    mapper = self._mapper_registry.lookup_device_detail_mapper(manufacturer)
+                try:
+                    default_namespaces = {"": UPNP_DEVICE1_NAMESPACE}
+                    root_el = parse_xml_content(desc_content)
                     
-                    device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=desc_filename)
-                
-            except Exception as parse_err:
-                err_msg = f"Error parsing device description XML: {parse_err}"
-                logger.error(err_msg)
+                    spec_ver, manufacturer = DeviceDetailMapper.read_spec_version_and_manufacturer(root_el, default_namespaces)
+                    
+                    if spec_ver is not None and manufacturer is not None:
 
+                        mapper = self._mapper_registry.lookup_device_detail_mapper(manufacturer)
+                        
+                        device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=desc_filename)
+                    
+                except Exception as parse_err:
+                    err_msg = f"Error parsing device description XML: {parse_err}"
+                    logger.error(err_msg)
+
+        except (FileNotFoundError, IOError) as file_err:
+            err_msg = f"Error reading device description file '{desc_filename}': {file_err}"
+            logger.error(err_msg)
 
         return device_desc
     
@@ -112,7 +121,7 @@ class DeviceMetadataManager:
 
         desc_content = None
 
-        if not os.path.exists(service_desc_filename):
+        if os.path.exists(service_desc_filename):
             desc_content = ServiceDesc.load_service_description(service_desc_filename)
 
         return desc_content

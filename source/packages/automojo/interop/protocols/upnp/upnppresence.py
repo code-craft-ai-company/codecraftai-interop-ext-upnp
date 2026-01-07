@@ -98,8 +98,7 @@ def notify_parse_request(content: bytes) -> dict:
     """
     content = content.decode('utf-8')
 
-    resp_headers = None
-    resp_body = None
+    resp_headers = {}
 
     mobj = REGEX_NOTIFY_HEADER.search(content)
     if mobj is not None:
@@ -118,7 +117,6 @@ def notify_parse_request(content: bytes) -> dict:
         # Pop the NOTIFY header
         resplines.pop(0).strip()
 
-        resp_headers = {}
         for nxtline in resplines:
             cidx = nxtline.find(":")
             if cidx > -1:
@@ -126,8 +124,7 @@ def notify_parse_request(content: bytes) -> dict:
                 val = nxtline[cidx+1:].strip()
                 resp_headers[key] = val
 
-        if body_content is not None:
-            resp_body = body_content
+    return resp_headers
 
     return resp_headers, resp_body
 
@@ -319,6 +316,24 @@ class UpnpPresence:
 
         return rtnval
 
+
+    @property
+    def is_running(self) -> bool:
+        """
+            Returns whether the UpnpPresence is currently running.
+            
+            :returns: True if the presence service is running, False otherwise.
+        """
+        return self._running
+
+    @property
+    def presence_interfaces(self) -> List[str]:
+        """
+            Returns the list of network interfaces being monitored for presence.
+            
+            :returns: List of interface names.
+        """
+        return self._presence_interfaces
 
     @property
     def presence_endpoint(self) -> Tuple[str, int]:
@@ -731,7 +746,7 @@ class UpnpPresence:
                             device_desc = self._query_manager.query_device_description(location)
                             if device_desc is not None:
 
-                                device_detail = UpnpDeviceDetail(device_evidence, device_desc)
+                                device_detail = UpnpDeviceDetail(device_desc, device_evidence)
 
                                 for search_window in active_search_windows:
                                     search_window.add_device(usn, device_detail)
@@ -982,9 +997,12 @@ class UpnpPresence:
         return
 
 
-    def start(self):
+    def start(self, presence_interfaces: Optional[List[str]] = None):
         """
             Start background threads for presence monitoring and discovery.
+            
+            :param presence_interfaces: Optional list of network interfaces to monitor. If provided,
+                                      this will override the interfaces configured during initialization.
         """
 
         self._lock.acquire()
@@ -992,6 +1010,10 @@ class UpnpPresence:
 
             if self._running:
                 raise RuntimeError("SSDP Scanner is already running.")
+            
+            # If presence_interfaces is provided, update the interfaces to monitor
+            if presence_interfaces is not None:
+                self._presence_interfaces = presence_interfaces
             
             # If running was False, the we are uninitialed and non of the threads have been created or started, set running
             # to true and begin the startup of all threads.
@@ -1188,6 +1210,7 @@ class UpnpPresence:
         message_length = None
         read_so_far = 0
         remaining_length = 1024
+        
         try:
             # Read To Header
             while self._running and remaining_length > 0:
@@ -1216,44 +1239,53 @@ class UpnpPresence:
                 if message_length is not None:
                     remaining_length = message_length - read_so_far
 
-        finally:
+            request = cbbuffer.getvalue()
+
+            cbbuffer.truncate(0)
+            cbbuffer.seek(0)
+
+            if headers_length is None:
+                logger.error("Callback message missing header terminator. svc_addr=%s", svc_addr)
+                return
+
+            req_body = request[headers_length:]
+            req_body = req_body.decode("utf-8")
+
+            #TODO: Add package capture support for debugging callback requests
+
+            if "SID" in req_headers:
+                sid = req_headers["SID"]
+
+                self.dispatch_subscription_event_callback(ifname, sid, svc_addr, req_headers, req_body)
+
+            else:
+                dbgmsg_lines = [
+                    "Received subscription notification without an SID. svc_addr={}".format(svc_addr),
+                    "REQUEST HEADERS:"
+                ]
+
+                for hdr_key, hdr_val in req_headers.items():
+                    dbgmsg_lines.append("    {}:{}".format(hdr_key, hdr_val))
+
+                dbgmsg_lines.append("REQUEST BODY:")
+                dbgmsg_lines.append(req_body)
+
+                dbgmsg = os.linesep.join(dbgmsg_lines)
+
+                logger.debug(dbgmsg)
+
+            # Send success response only after successful processing
             accepted_sock.sendall(UPNP_SUBSCRIPTION_NOTIFY_RESPONSE_OK)
-            accepted_sock.close()
-
-        request = cbbuffer.getvalue()
-
-        cbbuffer.truncate(0)
-        cbbuffer.seek(0)
-
-        if headers_length is None:
-            logger.error("Callback message missing header terminator. svc_addr=%s", svc_addr)
-            return
-
-        req_body = request[headers_length:]
-        req_body = req_body.decode("utf-8")
-
-        #TODO: Add package capture support for debugging callback requests
-
-        if "SID" in req_headers:
-            sid = req_headers["SID"]
-
-            self.dispatch_subscription_event_callback(ifname, sid, svc_addr, req_headers, req_body)
-
-        else:
-            dbgmsg_lines = [
-                "Received subscription notification without an SID. svc_addr={}".format(svc_addr),
-                "REQUEST HEADERS:"
-            ]
-
-            for hdr_key, hdr_val in req_headers.items():
-                dbgmsg_lines.append("    {}:{}".format(hdr_key, hdr_val))
-
-            dbgmsg_lines.append("REQUEST BODY:")
-            dbgmsg_lines.append(req_body)
-
-            dbgmsg = os.linesep.join(dbgmsg_lines)
-
-            logger.debug(dbgmsg)
+            
+        except Exception as ex:
+            logger.error("Error processing callback from %s: %s", svc_addr, str(ex))
+            # Don't send success response on error
+        finally:
+            # Always close the socket
+            try:
+                accepted_sock.close()
+            except Exception:
+                pass  # Ignore errors when closing socket
 
         return
 

@@ -31,8 +31,8 @@ import requests
 from automojo.errors.xtraceback import format_exc_lines
 from automojo.waiting.waitmodel import TimeoutContext
 
-from automojo.xmodules.xcollections.context import Context
-from automojo.presence.contextpaths import ContextPaths
+from automojo.thisapp.contextpaths import ContextPaths
+from automojo.thisapp.wellknown import ThisApplicationSingleton
 
 from automojo.interop.aspects import ActionPattern
 from automojo.xmodules.eventing.eventedvariablesink import EventedVariableSink
@@ -102,7 +102,8 @@ class UpnpServiceProxy(EventedVariableSink):
 
         self._logged_events = None
         if self.SERVICE_TYPE is not None:
-            ctx = Context()
+            this_app = ThisApplicationSingleton()
+            ctx = this_app.ctx
             logged_events_by_service = ctx.lookup(ContextPaths.UPNP_LOGGED_EVENTS)
             if logged_events_by_service is not None and self.SERVICE_TYPE in logged_events_by_service:
                 self._logged_events = logged_events_by_service[self.SERVICE_TYPE]
@@ -217,7 +218,7 @@ class UpnpServiceProxy(EventedVariableSink):
                         break
                     except UpnpError as upnp_err:
                         # If we got a UpnpError, then the call to the device succeeded from a connectivity perspective.
-                        # We log the error and raise an exception.
+                        # We log the error and raise an exception immediately (no retries for UPnP protocol errors).
                         err_code = upnp_err.errorCode
                         err_description = upnp_err.errorDescription
                         err_extra = upnp_err.extra
@@ -231,6 +232,7 @@ class UpnpServiceProxy(EventedVariableSink):
                             logger.debug(dbg_msg)
                         raise
                     except Exception as xcpt:
+                        # Connection or other non-UPnP errors - these should be retried
                         err_msg_lines = [
                             "Exception raised by _proxy_call_action."
                         ]
@@ -238,6 +240,7 @@ class UpnpServiceProxy(EventedVariableSink):
                         err_msg = os.linesep.join(err_msg_lines)
                         logger.error(err_msg)
 
+                # Only reach here for non-UPnP exceptions that should be retried
                 if completion_toctx.final_attempt:
                     what_for="a single UPNP action call to transact"
                     details = [
@@ -357,6 +360,7 @@ class UpnpServiceProxy(EventedVariableSink):
 
         elif aspects.action_pattern == ActionPattern.DO_UNTIL_CONNECTION_FAILURE:
             completion_toctx.mark_begin()
+            retry_counter = 0
 
             while True:
 
@@ -365,6 +369,7 @@ class UpnpServiceProxy(EventedVariableSink):
                         rtnval = self._proxy_call_action(action_name, arguments=arguments, auth=auth, headers=headers, aspects=aspects)
                     except UpnpError as upnp_err:
                         # We only log UPNP errors
+                        err_code = upnp_err.errorCode
                         err_description = upnp_err.errorDescription
                         err_extra = upnp_err.extra
                         if retry_counter % retry_logging_interval == 0:
@@ -390,6 +395,8 @@ class UpnpServiceProxy(EventedVariableSink):
                     completion_toctx.mark_final_attempt()
 
                 time.sleep(completion_toctx.interval)
+
+                retry_counter += 1
 
         else:
             errmsg = "UpnpServiceProxy: Unknown ActionPattern encountered. action_pattern={}".format(aspects.action_pattern)
@@ -612,8 +619,17 @@ class UpnpServiceProxy(EventedVariableSink):
             if resp is not None:
                 # If the body of the error response contains XML then it should be a UPnP error,
                 # extract the UPnP error information and raise a UpnpError
-                content_type = resp.headers["CONTENT-TYPE"]
-                if content_type.find('text/xml') == -1:
+                content_type = resp.headers.get("content-type", "").lower()
+                if content_type.find('text/xml') != -1:
+                    # This is a UPnP error response in XML format, parse it
+                    try:
+                        errorCode, errorDescription = self._soap_processor.parse_response_error_for_upnp(action_name, resp.content, resp.status_code, typed=self.serviceType)
+                        raise UpnpError(errorCode, errorDescription, "host=%s action=%s args=%s" % (self._host, action_name, repr(arguments)))
+                    except Exception:
+                        # If we can't parse the UPnP error, fall back to re-raising the original HTTP error
+                        raise
+                else:
+                    # Not a UPnP XML error, re-raise the original HTTP error
                     raise
         except:
             errmsg = traceback.format_exc()

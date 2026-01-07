@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Union, TYPE_CHECKING
 
 from automojo.xmodules.xlogging.enhancedloggers import getEnhancedLogger
 import threading
+import weakref
 
 import requests
 
@@ -199,13 +200,19 @@ class UpnpDeviceBase:
             Gets the service description for the specified service type.
 
             :param serviceType: The service type to lookup the service description for.
+            :param extra_headers: Optional extra headers to include in the request.
 
             :returns: Returns the description information for the service type if found or None if not found.
+            
+            :raises ValueError: If URLBase is not set for the device.
         """
         svc_desc = None
 
         for nxtsvc in self._device_description.serviceList:
             if nxtsvc.serviceType == serviceType:
+                if self.URLBase is None:
+                    raise ValueError("URLBase must be set for the device before retrieving service descriptions.")
+                
                 fullurl = self.URLBase.rstrip("/") + "/" + nxtsvc.SCPDURL.lstrip("/")
 
                 headers = {
@@ -218,7 +225,7 @@ class UpnpDeviceBase:
                 resp: requests.Response = requests.get(fullurl, headers=headers)
                 if resp.status_code == 200:
                     svc_content = resp.text
-                    svc_desc = ServiceDesc.query_service_description(svc_content)
+                    svc_desc = ServiceDesc.process_service_description(svc_content)
                     break
 
         return svc_desc
@@ -245,7 +252,8 @@ class UpnpDeviceBase:
 
                 self._device_lock.release()
                 try:
-                    svc = factory.create_service_instance(svc_desc)
+                    device_ref = weakref.ref(self)
+                    svc = factory.create_service_instance(svc_desc, device_ref)
                 finally:
                     self._device_lock.acquire()
 
@@ -268,7 +276,7 @@ class UpnpDeviceBase:
         
         self._device_lock.acquire()
         try:
-            rtnval = self._device_description.as_json(brief=brief)
+            rtnval = self._device_description.to_json(brief=brief)
         finally:
             self._device_lock.release()
 
@@ -284,11 +292,7 @@ class UpnpDeviceBase:
         """
         devkey = device_description.get_extension_key()
         
-        dev_instance: "UpnpDeviceBase" = factory.create_embedded_device_instance(
-            device_description=device_description,
-            urlBase=self._urlBase,
-            host=self._host
-        )
+        dev_instance: "UpnpDeviceBase" = factory.create_embedded_device_instance(device_description)
 
         self._device_lock.acquire()
         try:
@@ -299,7 +303,7 @@ class UpnpDeviceBase:
         finally:
             self._device_lock.release()
 
-        dev_instance.enhance_device(factory)
+        dev_instance.assemble_device(factory)
 
         return
 
@@ -332,7 +336,7 @@ class UpnpDeviceBase:
 
                     svckey = serviceInfo.get_extension_key()
 
-                    service_descriptions[svckey] = ServiceDesc.query_service_description(service_url)
+                    service_descriptions[svckey] = ServiceDesc.process_service_description(svc_desc_resp.text)
 
         self._device_lock.acquire()
         try:

@@ -188,8 +188,8 @@ class SoapProcessor:
 
                 argElement = SubElement(methElement, arg_name)
                 if typed and soap_type:
-                    if not isinstance(type, QName):
-                        arg_type = QName(NS_XSD, soap_type)
+                    if not isinstance(soap_type, QName):
+                        soap_type = QName(NS_XSD, soap_type)
                     argElement.set(NS_XSI + "type", soap_type)
 
                 argElement.text = arg_val
@@ -297,8 +297,11 @@ class SoapProcessor:
             detail = resp_body.find(".//detail")
             upnpErrorNode = detail.find(".//{%s}UPnPError" % NS_UPNP_CONTROL)
             errorCode = int(upnpErrorNode.find(".//{%s}errorCode" % NS_UPNP_CONTROL).text)
-            errorDescription = upnpErrorNode.find(".//{%s}errorDescription" % NS_UPNP_CONTROL)
-            if errorDescription is None:
+            
+            errorDescriptionNode = upnpErrorNode.find(".//{%s}errorDescription" % NS_UPNP_CONTROL)
+            if errorDescriptionNode is not None and errorDescriptionNode.text is not None:
+                errorDescription = errorDescriptionNode.text
+            else:
                 errorDescription = UPNP_ERROR_TEST_LOOKUP.get(errorCode, "Unknown error.")
 
         except Exception as xcpt:

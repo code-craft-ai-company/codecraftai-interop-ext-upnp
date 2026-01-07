@@ -13,7 +13,7 @@ __copyright__ = "Copyright 2025, Automation Mojo LLC"
 __credits__ = []
 
 
-from typing import Dict, List, TYPE_CHECKING
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 
 import threading
@@ -110,11 +110,12 @@ class UpnpSearchWindow:
         return rtnval
 
     @property
-    def presence(self) -> "UpnpPresence":
+    def presence(self) -> Optional["UpnpPresence"]:
         """
             The :class:`UpnpPresence` object that is associated with this search window.
+            Returns None if the presence object has been garbage collected.
 
-            :returns: The owning :class:`UpnpPresence` instance.
+            :returns: The owning :class:`UpnpPresence` instance or None.
         """
         return self._presence_ref()
 
@@ -181,6 +182,8 @@ class UpnpSearchWindow:
             :returns: ``True`` if the window closed before timeout, otherwise ``False``.
         """
 
+        completed_successfully = False
+
         try:
             self._lock.acquire()
 
@@ -191,14 +194,17 @@ class UpnpSearchWindow:
                 try:
                     self._lock.release()
                 
-                    self._wait_gate.wait(timeout=timeout)
+                    completed_successfully = self._wait_gate.wait(timeout=timeout)
                 finally:
                     self._lock.acquire()
+            else:
+                # Window is already completed or timed out
+                completed_successfully = True
 
         finally:
             self._lock.release()
 
-        return
+        return completed_successfully
 
 
     def _monitor_thread_entry(self, sgate: threading.Event):
@@ -220,47 +226,48 @@ class UpnpSearchWindow:
                 self._window_state = UpnpSearchWindowState.TIMEOUT
                 break
 
-            try:
-                self._lock.acquire()
-
+            # Get current state atomically
+            with self._lock:
                 if self._still_waiting_for is not None:
-
                     checking_for = [hint for hint in self._still_waiting_for]
-                    recheck_for = []
                     current_found = self._devices_found.copy()
+                else:
+                    checking_for = None
+                    current_found = {}
 
-                    try:
-                        self._lock.release()
+            # Process hints without holding the lock to avoid blocking other operations
+            if checking_for is not None:
+                matched_hints = []
+                matched_devices = {}
+                
+                for nxt_hint in checking_for:
+                    hint_matched = False
+                    for device in current_found.values():
+                        if nxt_hint.matches(device):
+                            # Store the matched device for later atomic update
+                            hint_matched = True
+                            matched_hints.append(nxt_hint)
+                            matched_devices[nxt_hint.get_hint()] = device
+                            break
 
-                        while len(checking_for) > 0:
-                            nxt_hint = checking_for.pop()
-
-                            hint_matched = False
-                            for device in current_found.values():
-                                if nxt_hint.matches(device):
-                                    self._matching_devices[nxt_hint.get_hint()] = device
-                                    hint_matched = True
-                                    break
-                            
-                            if not hint_matched:
-                                recheck_for.append(nxt_hint)
-
-                    finally:
-                        self._lock.acquire()
-
-                    self._still_waiting_for = recheck_for
+                # Update shared state atomically
+                with self._lock:
+                    # Remove matched hints from the waiting list
+                    if self._still_waiting_for is not None:
+                        for matched_hint in matched_hints:
+                            if matched_hint in self._still_waiting_for:
+                                self._still_waiting_for.remove(matched_hint)
+                    
+                    # Add matched devices to the matching devices dictionary
+                    self._matching_devices.update(matched_devices)
 
                     # If we had a wait list and we found all the devices, then we can break out of the thread loop
                     # and notify any waiting thread that the search is completed and the windows closed.
-                    if len(self._still_waiting_for) == 0:
+                    if self._still_waiting_for is not None and len(self._still_waiting_for) == 0:
                         self._window_state = UpnpSearchWindowState.COMPLETED
                         break
 
-            finally:
-                self._lock.release()
-
             time.sleep(self._monitor_interval)
-
 
         # The search window has closed, so we need to notify any waiting threads
         self._wait_gate.set()

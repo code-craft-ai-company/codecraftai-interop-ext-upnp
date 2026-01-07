@@ -13,7 +13,12 @@ __author__ = "Myron Walker"
 __copyright__ = "Copyright 2025, Automation Mojo LLC"
 __credits__ = []
 
+from typing import TYPE_CHECKING
+
 from automojo.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
+
+if TYPE_CHECKING:
+    from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
 
 class UpnpDeviceHint:
     """
@@ -37,17 +42,18 @@ class UpnpDeviceHint:
         """
         return self._hint
 
-    def matches(self, exhibit: DeviceEvidence) -> bool:
+    def matches(self, exhibit: "UpnpDeviceDetail") -> bool:
         """
             Check if the hint provided by the user configuration matches the device exhibit.
 
-            :param exhibit: The UPnP device exhibit to check against.
+            :param exhibit: The UPnP device detail to check against.
 
             :returns: ``True`` if the hint matches the device exhibit, ``False`` otherwise.
         """
         rtnval = False
 
-        if self._hint in exhibit.usn:
+        # Access USN through the evidence property of the device detail
+        if exhibit.evidence is not None and self._hint in exhibit.evidence.usn:
             rtnval = True
 
         return rtnval

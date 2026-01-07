@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 logger = getEnhancedLogger()
 
 
-def xml_format_basci1_device_desc(iconList: Optional[List[IconDesc]] = None, serviceList: Optional[List[ServiceEvidence]] = None,
+def xml_format_basic1_device_desc(iconList: Optional[List[IconDesc]] = None, serviceList: Optional[List[ServiceEvidence]] = None,
                                   deviceList: Optional[List["EmbeddedDeviceDesc"]] = None, indent: str = "") -> str:
     """
         Create an XML representation of a basic device description.
@@ -46,25 +46,25 @@ def xml_format_basci1_device_desc(iconList: Optional[List[IconDesc]] = None, ser
     """
 
     desc_lines = [
-        f'{indent}<?xml version="1.0"?>'
-        f'{indent}<root xmlns="urn:schemas-upnp-org:device-1-0">'
-        f'{indent}    <specVersion>'
-        f'{indent}        <major>1</major>'
-        f'{indent}        <minor>0</minor>'
-        f'{indent}    </specVersion>'
-        f'{indent}    <URLBase>%(URLBase)s</URLBase>'
-        f'{indent}    <device>'
-        f'{indent}        <deviceType>urn:schemas-upnp-org:device:Basic:1</deviceType>'
-        f'{indent}        <friendlyName>%(friendlyName)s</friendlyName>'
-        f'{indent}        <manufacturer>%(manufacturer)s</manufacturer>'
-        f'{indent}        <manufacturerURL>%(manufacturerURL)s</manufacturerURL>'
-        f'{indent}        <modelDescription>%(modelDescription)s</modelDescription>'
-        f'{indent}        <modelName>%(modelName)s</modelName>'
-        f'{indent}        <modelNumber>%(modelNumber)s</modelNumber>'
-        f'{indent}        <modelURL>%(modelURL)s</modelURL>'
-        f'{indent}        <serialNumber>%(serialNumber)s</serialNumber>'
-        f'{indent}        <UDN>%(UDN)s</UDN>'
-        f'{indent}        <UPC>%(UPC)s</UPC>'
+        f'{indent}<?xml version="1.0"?>',
+        f'{indent}<root xmlns="urn:schemas-upnp-org:device-1-0">',
+        f'{indent}    <specVersion>',
+        f'{indent}        <major>1</major>',
+        f'{indent}        <minor>0</minor>',
+        f'{indent}    </specVersion>',
+        f'{indent}    <URLBase>%(URLBase)s</URLBase>',
+        f'{indent}    <device>',
+        f'{indent}        <deviceType>urn:schemas-upnp-org:device:Basic:1</deviceType>',
+        f'{indent}        <friendlyName>%(friendlyName)s</friendlyName>',
+        f'{indent}        <manufacturer>%(manufacturer)s</manufacturer>',
+        f'{indent}        <manufacturerURL>%(manufacturerURL)s</manufacturerURL>',
+        f'{indent}        <modelDescription>%(modelDescription)s</modelDescription>',
+        f'{indent}        <modelName>%(modelName)s</modelName>',
+        f'{indent}        <modelNumber>%(modelNumber)s</modelNumber>',
+        f'{indent}        <modelURL>%(modelURL)s</modelURL>',
+        f'{indent}        <serialNumber>%(serialNumber)s</serialNumber>',
+        f'{indent}        <UDN>%(UDN)s</UDN>',
+        f'{indent}        <UPC>%(UPC)s</UPC>',
     ]
 
     if iconList is not None and len(iconList) > 0:
@@ -107,8 +107,8 @@ def xml_format_basci1_device_desc(iconList: Optional[List[IconDesc]] = None, ser
         ])
 
     desc_lines.extend([
-        f'{indent}        <presentationURL>%(presentationURL)s</presentationURL>'
-        f'{indent}    </device>'
+        f'{indent}        <presentationURL>%(presentationURL)s</presentationURL>',
+        f'{indent}    </device>',
         f'{indent}</root>'
     ])
 
@@ -405,12 +405,34 @@ class Basic1DeviceDesc:
             :returns: XML string representation of the Basic1DeviceDesc object.
         """
         
-        desc = xml_format_basci1_device_desc(
+        desc_template = xml_format_basic1_device_desc(
             iconList=self.iconList,
             serviceList=self.serviceList,
             deviceList=self.deviceList,
             indent=indent
         )
+        
+        # Substitute placeholder values with actual device properties
+        # Ensure all values are strings and handle None values
+        substitution_values = {
+            'URLBase': self.baseURL or '',
+            'friendlyName': self.friendlyName or '',
+            'manufacturer': self.manufacturer or '',
+            'manufacturerURL': self.manufacturerURL or '',
+            'modelDescription': self.modelDescription or '',
+            'modelName': self.modelName or '',
+            'modelNumber': self.modelNumber or '',
+            'modelURL': self.modelURL or '',
+            'serialNumber': self.serialNumber or '',
+            'UDN': self.UDN or '',
+            'UPC': self.UPC or '',
+            'presentationURL': self.presentationURL or ''
+        }
+        
+        try:
+            desc = desc_template % substitution_values
+        except (KeyError, TypeError) as e:
+            raise ValueError(f"Failed to format XML template: {e}") from e
         
         return desc
 

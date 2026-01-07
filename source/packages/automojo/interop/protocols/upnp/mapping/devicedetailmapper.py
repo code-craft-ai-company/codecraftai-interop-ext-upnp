@@ -64,7 +64,7 @@ class DeviceDetailMapper:
 
 
     @classmethod
-    def read_spec_version_and_manufacturer(cls, root_el: Element, namespaces: Dict[str, str]) -> SpecVersion:
+    def read_spec_version_and_manufacturer(cls, root_el: Element, namespaces: Dict[str, str]) -> tuple[SpecVersion, str]:
         """
             Extract the spec version and manufacturer from a device description document.
 
@@ -172,12 +172,11 @@ class DeviceDetailMapper:
 
                 val = None
                 if tag == "manufacturer":
-                    val = child_el.text
-                    manufacturer = val.upper()
+                    val = child_el.text.upper()  # Store uppercase manufacturer directly
                 elif tag == "iconList":
                     val = cls._process_icons_list(child_el, namespaces=namespaces)
                 elif tag == 'deviceList':
-                    val = cls._process_embedded_devices_list(child_el, namespaces=namespaces)
+                    val = cls._process_embedded_devices_list(child_el, namespaces, root_el=root_el, specVersion=specVersion)
                 elif tag == 'serviceList':
                     val = cls._process_services_list(child_el, namespaces=namespaces)
                 else:
@@ -241,19 +240,19 @@ class DeviceDetailMapper:
     
 
     @classmethod
-    def _process_embedded_devices_list(cls, devices_el: Element, namespaces: Dict[str, str]) -> List[EmbeddedDeviceDesc]:
+    def _process_embedded_devices_list(cls, devices_el: Element, namespaces: Dict[str, str], root_el: Element = None, specVersion: SpecVersion = None) -> List[EmbeddedDeviceDesc]:
         """
             Parse a list of embedded devices from a ``deviceList`` element.
 
             :param devices_el: The ``deviceList`` element to parse.
             :param namespaces: Namespace mapping for XML parsing.
+            :param root_el: The root element of the document.
+            :param specVersion: The spec version from the parent context.
 
             :returns: List of :class:`EmbeddedDeviceDesc` objects.
         """
 
         devicesList = []
-
-        specVersion = None
 
         for nxtEl in devices_el:
             full_tag = nxtEl.tag
@@ -265,12 +264,12 @@ class DeviceDetailMapper:
                     propEl = nxtEl.find("deviceType", namespaces=namespaces)
                     deviceType = propEl.text
 
-                    svcInfo = cls._process_device(nxtEl, nxtEl, namespaces=namespaces, specVersion=specVersion, is_embedded=True)
+                    svcInfo = cls._process_device(root_el, nxtEl, namespaces, specVersion, is_embedded=True)
                     
                     devicesList.append(svcInfo)
                 elif tag == "specVersion":
 
-                    specVersion = cls._process_spec_version(nxtEl, namespaces=namespaces)
+                    specVersion = cls.process_spec_version(nxtEl, namespaces=namespaces)
 
         return devicesList
 

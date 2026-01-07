@@ -241,12 +241,18 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
         minor = None
 
         next_el = version_el.find("./major_version", namespaces=namespaces)
-        if next_el is not None:
-            major = BoseDeviceDetailMapper.process_bose_feature_version(next_el, namespaces=namespaces)
+        if next_el is not None and next_el.text is not None:
+            try:
+                major = int(next_el.text.strip())
+            except ValueError:
+                major = None
         
         next_el = version_el.find("./minor_version", namespaces=namespaces)
-        if next_el is not None:
-            minor = BoseDeviceDetailMapper.process_bose_feature_version(next_el, namespaces=namespaces)
+        if next_el is not None and next_el.text is not None:
+            try:
+                minor = int(next_el.text.strip())
+            except ValueError:
+                minor = None
         
         verobj = BoseFeatureVersion(major, minor)
 

@@ -125,11 +125,16 @@ class UpnpDefaultVar:
         """
             Performs a threadsafe read of the value, updated, and state members of a
             :class:`UpnpEventVar` instance.
+            
+            :raises RuntimeError: If the service reference is no longer valid.
         """
         value, updated, changed, state = None, None, None, EventedVariableState.UnInitialized
 
         service = self._service_ref()
-        for _ in service.yield_service_lock():
+        if service is None:
+            raise RuntimeError(f"Service reference for variable '{self._name}' is no longer valid")
+            
+        for _ in service.yield_state_lock():
             updated = self._updated
             changed = self._changed
 
@@ -143,6 +148,8 @@ class UpnpDefaultVar:
         """
             Peforms a threadsafe update of the value, updated and sid members of a
             :class:`UpnpEventVar` instance.
+            
+            :raises RuntimeError: If the service reference is no longer valid and service_locked is False.
         """
         updated = datetime.now()
 
@@ -155,6 +162,9 @@ class UpnpDefaultVar:
                 self._expires = expires
         else:
             service = self._service_ref()
+            if service is None:
+                raise RuntimeError(f"Service reference for variable '{self._name}' is no longer valid")
+                
             for _ in service.yield_state_lock():
                 orig_value = self._value
                 self._value, self._updated = value, updated

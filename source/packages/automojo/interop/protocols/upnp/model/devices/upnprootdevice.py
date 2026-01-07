@@ -82,8 +82,6 @@ def device_description_load(location: str) -> Union[ElementTree, None]:
 
     return  docTree
 
-
-
 def device_description_find_components(location: str, docTree: ElementTree, namespaces: dict = {"": UPNP_DEVICE1_NAMESPACE}) -> Tuple[Element, str, str, str, str, str]:
     """
         Processes the device description and find the device description components.  The device
@@ -151,13 +149,13 @@ class UpnpRootDevice(UpnpDeviceBase):
 
     SERVICE_NAMES = []
 
-    def __init__(self, presence: "UpnpPresence", device_detail: UpnpDeviceDetail):
+    def __init__(self, device_detail: UpnpDeviceDetail, presence: Optional["UpnpPresence"] = None):
         """
             Creates a root device object.
         """
         super(UpnpRootDevice, self).__init__(device_detail)
 
-        self._presence_ref = weakref.ref(presence)
+        self._presence_ref = weakref.ref(presence) if presence is not None else None
 
         self._server = None        
 
@@ -170,8 +168,6 @@ class UpnpRootDevice(UpnpDeviceBase):
 
         self._auto_subscribe = False
         self._mode = None
-
-        self._root_device_lock = threading.RLock()
 
         self._subscriptions: Dict[StrSvcType, Tuple[StrSvcId, datetime]] = {}
         self._sid_to_service_lookup: Dict[str, UpnpServiceProxy] = {}
@@ -305,11 +301,11 @@ class UpnpRootDevice(UpnpDeviceBase):
         return mnumber
 
     @property
-    def presence(self) -> "UpnpPresence":
+    def presence(self) -> Optional["UpnpPresence"]:
         """
             Returns the presence object associated with the UPNP device.
         """
-        return self._presence_ref()
+        return self._presence_ref() if self._presence_ref is not None else None
 
     @property
     def coordinator(self):
@@ -442,28 +438,28 @@ class UpnpRootDevice(UpnpDeviceBase):
             service_type = service.SERVICE_TYPE
 
             new_subscription = False
-            current_sid = None
-            current_expires = None
+            existing_sub_sid = None
+            existing_sub_expires = None
+            
             with self._device_lock:
                 if service_type not in self._subscriptions:
                     new_subscription = True
-                    self._subscriptions[service_type] = (None, None)
                 else:
-                    current_sid, current_expires = self._subscriptions[service_type]
-                    if current_sid is None and current_expires is None:
+                    existing_sub_sid, existing_sub_expires = self._subscriptions[service_type]
+                    if existing_sub_sid is None and existing_sub_expires is None:
                         new_subscription = True
 
-            sub_sid, sub_expires = current_sid, current_expires
-
-            check_time = datetime.now() + timedelta(seconds=TIMEDELTA_RENEWAL_WINDOW)
-            if sub_expires is not None and check_time > sub_expires:
-                renew = True
+            # Check if existing subscription needs renewal
+            if not new_subscription and existing_sub_expires is not None:
+                check_time = datetime.now() + timedelta(seconds=TIMEDELTA_RENEWAL_WINDOW)
+                if check_time > existing_sub_expires:
+                    renew = True
 
             if new_subscription or renew:
                 svckey = service.get_extension_key()
-                service = self._services[svckey]
+                target_service = self._services[svckey]
 
-                subscribe_url = urljoin(self.URLBase, service.eventSubURL)
+                subscribe_url = urljoin(self.URLBase, target_service.eventSubURL)
 
                 presence = self.presence
                 if presence is None:
@@ -472,74 +468,26 @@ class UpnpRootDevice(UpnpDeviceBase):
                 host_ip = self._primary_route[MSearchRouteKeys.IP]
 
                 custom_headers = self.get_custom_subscribe_headers()
-                renewal_attempted = False
-                if renew and current_sid is not None:
-                    renewal_attempted = True
-                    sub_sid, sub_expires = presence.service_subscribe(
-                        host_ip,
-                        subscribe_url,
-                        timeout,
-                        self.process_subscription_callback,
-                        custom_headers=custom_headers,
-                        sid=current_sid,
-                        renew=True
-                    )
+                sub_sid, sub_expires = presence.service_subscribe(
+                    host_ip,
+                    subscribe_url,
+                    timeout,
+                    self.process_subscription_callback,
+                    custom_headers=custom_headers
+                )
 
-                if sub_sid is None and renewal_attempted:
-                    sub_sid, sub_expires = presence.service_subscribe(
-                        host_ip,
-                        subscribe_url,
-                        timeout,
-                        self.process_subscription_callback,
-                        custom_headers=custom_headers
-                    )
-
-                if sub_sid is None and not renewal_attempted:
-                    sub_sid, sub_expires = presence.service_subscribe(
-                        host_ip,
-                        subscribe_url,
-                        timeout,
-                        self.process_subscription_callback,
-                        custom_headers=custom_headers
-                    )
-
-                if sub_sid is None and renewal_attempted and current_sid is not None:
-                    try:
-                        presence.discard_subscription_callback(current_sid)
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        logger.debug("Failed to discard subscription callback sid=%s", current_sid)
-
-                discard_sid = None
                 with self._device_lock:
                     if sub_sid is not None:
-                        old_sid, _ = self._subscriptions.get(service_type, (None, None))
-                        if old_sid is not None and old_sid != sub_sid:
-                            discard_sid = old_sid
-                            if old_sid in self._sid_to_service_lookup:
-                                del self._sid_to_service_lookup[old_sid]
-                            self._unregister_subscription_mapping(old_sid)
-                        service._update_subscription_details(sub_sid, sub_expires)
-                        self._sid_to_service_lookup[sub_sid] = service
+                        self._sid_to_service_lookup[sub_sid] = target_service
                         self._subscriptions[service_type] = (sub_sid, sub_expires)
-                        self._register_subscription_mapping(sub_sid)
-                    elif new_subscription:
-                        service.invalidate_subscription()
+                    else:
+                        # Only remove from subscriptions if subscription failed
                         if service_type in self._subscriptions:
                             del self._subscriptions[service_type]
-                    else:
-                        service.invalidate_subscription()
-                        if current_sid is not None:
-                            if current_sid in self._sid_to_service_lookup:
-                                del self._sid_to_service_lookup[current_sid]
-                            self._unregister_subscription_mapping(current_sid)
-                        if service_type in self._subscriptions:
-                            self._subscriptions[service_type] = (None, None)
-
-                if discard_sid is not None:
-                    try:
-                        presence.discard_subscription_callback(discard_sid)
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        logger.debug("Failed to discard subscription callback sid=%s", discard_sid)
+            else:
+                # Return existing subscription info if no new subscription was needed
+                sub_sid = existing_sub_sid
+                sub_expires = existing_sub_expires
 
         return sub_sid, sub_expires
 
@@ -552,6 +500,7 @@ class UpnpRootDevice(UpnpDeviceBase):
         """
 
         if len(service.SERVICE_EVENT_VARIABLES) > 0:
+            # Get subscription ID before clearing the service subscription
             if subscription_id is None:
                 subscription_id = service.subscription_id
 
@@ -588,6 +537,15 @@ class UpnpRootDevice(UpnpDeviceBase):
 
     subscribe_to_events = events_subscribe
     unsubscribe_to_events = events_unsubscribe
+
+    def set_presence(self, presence: "UpnpPresence"):
+        """
+            Sets the presence object for this device.
+            
+            :param presence: The UpnpPresence object to associate with this device.
+        """
+        self._presence_ref = weakref.ref(presence)
+        return
 
     def get_custom_subscribe_headers(self) -> Optional[Dict[str, str]]:
         """
@@ -787,6 +745,10 @@ class UpnpRootDevice(UpnpDeviceBase):
             self._auto_subscribe = True
             self.subscribe_to_all_services(factory)
             self._start_subscription_scheduler()
+        else:
+            self._auto_subscribe = False
+            self._stop_subscription_scheduler()
+            self._unsubscribe_all_services()subscription_scheduler()
         else:
             self._auto_subscribe = False
             self._stop_subscription_scheduler()

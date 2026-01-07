@@ -23,7 +23,6 @@ import weakref
 from http import HTTPStatus
 from io import BytesIO, SEEK_END
 
-import netifaces
 import yaml
 
 from requests.exceptions import ConnectionError
@@ -31,17 +30,17 @@ from requests.exceptions import ConnectionError
 from automojo.errors.exceptions import ConfigurationError, SemanticError
 from automojo.landscaping.friendlyidentifier import FriendlyIdentifier
 
-from automojo.presence.wellknown import ContextSingleton
-from automojo.presence.contextpaths import ContextPaths
+from automojo.thisapp.wellknown import ThisApplicationSingleton
+from automojo.thisapp.contextpaths import ContextPaths
 
 from automojo.networking.constants import HTTP1_1_LINESEP, HTTP1_1_END_OF_HEADER
 from automojo.networking.interfaces import get_interface_for_ip
-from automojo.networking.resolution import get_arp_table, refresh_arp_table
+from automojo.networking.multicast import create_multicast_socket
 from automojo.networking.trafficcapturecontext import TrafficCaptureContext
 
 import automojo.interop.protocols.upnp as upnp_module
 
-from automojo.landscaping.coordinators.coordinatorbase import CoordinatorBase
+from automojo.landscaping.coordinatorbase import CoordinatorBase
 from automojo.landscaping.landscapedevice import LandscapeDevice
 
 from automojo.interop.protocols.upnp.constants import UPNP_HEADERS
@@ -49,11 +48,12 @@ from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRoo
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import device_description_load
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import device_description_find_components
 
-from automojo.interop.protocols.upnp.upnpfactory import UpnpFactory
-from automojo.interop.protocols.upnp.upnpprotocol import msearch_query_host, msearch_scan, notify_parse_request
-from automojo.interop.protocols.upnp.upnpprotocol import MSearchKeys, MSearchRouteKeys, UpnpProtocol
-from automojo.interop.protocols.upnp.services.upnpserviceproxy import UpnpServiceProxy
-from automojo.interop.protocols.upnp.xml.upnpdevice1 import UPNP_DEVICE1_NAMESPACE
+from automojo.interop.protocols.upnp.model.devices.upnpdevicefactory import UpnpDeviceFactory
+from automojo.interop.protocols.upnp.upnppresence import UpnpPresence, notify_parse_request
+from automojo.interop.protocols.upnp.constants import MSearchKeys, MSearchRouteKeys
+from automojo.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
+from automojo.interop.protocols.upnp.model.services.upnpserviceproxy import UpnpServiceProxy
+from automojo.interop.protocols.upnp.constants import UPNP_DEVICE1_NAMESPACE
 
 from automojo.networking.interfaces import get_ipv4_address
 
@@ -118,7 +118,8 @@ class UpnpCoordinator(CoordinatorBase):
         """
         super(UpnpCoordinator, self).__init__(lscape, control_point=control_point, workers=workers)
 
-        context = ContextSingleton()
+        this_app = ThisApplicationSingleton()
+        context = this_app.context
         self._upnp_cache_dir = context.lookup(ContextPaths.RUNTIME_HOME_DIRECTORY, default=os.path.expanduser("~/mjr"))
         self._local_udn = uuid.getnode()
 
@@ -129,7 +130,7 @@ class UpnpCoordinator(CoordinatorBase):
             Called by the CoordinatorBase constructor to perform the one time initialization of the coordinator Singleton
             of a given type.
 
-            :param control_point: An object that acts as a UPNP control point.
+            :param presence: An optional UpnpPresence instance for device discovery. If None, a new instance will be created.
             :param workers: The number of worker threads to spin up for handling work packets.
         """
         # pylint: disable=arguments-differ
@@ -138,15 +139,21 @@ class UpnpCoordinator(CoordinatorBase):
         # These variables are fixed at the start of the UpnpCoordinator and because
         # they are fixed, we don't protect them with the all.
 
-        self._presence = presence
+        if presence is None:
+            self._presence = UpnpPresence()
+        else:
+            self._presence = presence
 
         self._worker_count = workers
 
-        self._factory = UpnpFactory()
+        self._factory = UpnpDeviceFactory()
 
         self._running = False
         self._allow_unknown_devices = False
         self._upnp_recording = True
+
+        # Store the control point reference
+        self._control_point = _kwargs.get('control_point')
 
         # The count for the shutdown gate semaphore is set at startup so we don't
         # need to lock protect it.  Once it is set, it is fixed for the lifespan
@@ -157,6 +164,15 @@ class UpnpCoordinator(CoordinatorBase):
         # These variables are protected and read/write synchronized by the coordinator
         # lock.  They are all prefixed with _cl_ so it is easy to identify in code
         # if the lock is being held properly when the variables are being accessed.
+
+        # Initialize the coordinator lock
+        self._coord_lock = threading.RLock()
+
+        # Initialize the children lookup table
+        self._cl_children = {}
+
+        # Initialize monitor thread reference
+        self._monitor_thread = None
 
         # Callback threads are created on a per interface basis so we use a list
         # to manage them.
@@ -204,6 +220,11 @@ class UpnpCoordinator(CoordinatorBase):
 
         self._cl_callback_interface_sockets = {}
 
+        # Initialize scan result storage
+        self._found_devices = {}
+        self._available_devices = {}
+        self._unavailable_devices = []
+
         return
 
     @property
@@ -212,6 +233,13 @@ class UpnpCoordinator(CoordinatorBase):
             Returns a local UDN for this device.
         """
         return self._local_udn
+
+    @property
+    def presence(self) -> UpnpPresence:
+        """
+            Returns the UpnpPresence instance used for device discovery.
+        """
+        return self._presence
 
     @property
     def watch_devices(self) -> List[LandscapeDevice]:
@@ -290,16 +318,12 @@ class UpnpCoordinator(CoordinatorBase):
 
             :param ifname: The interface name of the interface to get the callback url for.
 
-            :returns: Returns the callback url being monintored by the coordinator for a given interface.
+            :returns: Returns the callback url being monitored by the coordinator for a given interface.
         """
         callback_url = None
 
-        self._coord_lock.acquire()
-        try:
-            if ifname in self._cl_iface_callback_addr_lookup:
-                callback_url = "<http://{}/notify>".format(self._cl_iface_callback_addr_lookup[ifname])
-        finally:
-            self._coord_lock.release()
+        if self._presence is not None:
+            callback_url = self._presence.form_callback_url_for_interface(ifname)
 
         return callback_url
 
@@ -393,9 +417,9 @@ class UpnpCoordinator(CoordinatorBase):
 
     def lookup_device_list_by_usn(self, usnlist: List[str]) -> List[LandscapeDevice]:
         """
-            Lookup a list of UPNP devices by thier USN id.
+            Lookup a list of UPNP devices by their USN id.
 
-            :param usn: A list of USN identifiers for devices to search for.
+            :param usnlist: A list of USN identifiers for devices to search for.
 
             :returns: A list of devices found with USN(s) in the usn search list.
         """
@@ -468,15 +492,17 @@ class UpnpCoordinator(CoordinatorBase):
                             response_timeout: float = 20, pre_msearch_timeout=20, retry: int = 2, 
                             upnp_recording: bool = False, allow_unknown_devices: bool = False):
         """
-            Starts up and initilizes the UPNP coordinator by utilizing a hint list to determine
-            what network interfaces to setup UPNP monitoring on.
+            Starts up and initializes the UPNP coordinator by utilizing UpnpPresence for device discovery.
 
-            :param query_devices: A list of upnp USN(s) to search for.
-            :param required_devices: A list of required USN(s) that we will setup watching and updates for.
+            :param query_devices: A dictionary of upnp device hints to search for.
+            :param required_devices: A list of required device hints that we will setup watching and updates for.
+            :param watchlist: A list of device hints to watch for presence updates.
             :param exclude_interfaces: Network interfaces that will be excluded from the search for devices.
-            :param response_timeout: A timeout to wait for a response.
+            :param response_timeout: A timeout to wait for device discovery responses.
+            :param pre_msearch_timeout: Timeout for pre-search activities.
             :param retry: The number of retry attempts to make before giving up on finding devices.
             :param upnp_recording: Forces the updating or recording of device descriptions from devices found on the network.
+            :param allow_unknown_devices: Whether to allow devices not in the configuration.
         """
         # pylint: disable=dangerous-default-value
 
@@ -492,86 +518,53 @@ class UpnpCoordinator(CoordinatorBase):
         if self._running:
             raise RuntimeError("UpnpCoordinator.startup_scan called twice, The UpnpCoordinator is already running.") from None
 
-        # Because we only allow this method to be called once, We don't need to lock the UpnpCoordinator
-        # for most of this activity because the only thread with a reference to use is the caller.  At
-        # the end of this function when we startup all the callback and worker threads is when we need to
-        # start using the lock.
         if query_devices is None:
-            query_devices = []
-
-        interface_list = [ifname for ifname in netifaces.interfaces()]
-        for exif in exclude_interfaces:
-            if exif in interface_list:
-                interface_list.remove(exif)
+            query_devices = {}
 
         found_devices = {}
         matching_devices = {}
         missing_devices = []
 
-        remaining_query_devices = [ usn for usn in query_devices]
+        # Start the UpnpPresence for device discovery
+        if not self._presence.is_running:
+            # Filter out excluded interfaces from presence monitoring
+            presence_interfaces = [ifname for ifname in self._presence.presence_interfaces 
+                                 if ifname not in exclude_interfaces]
+            self._presence.start(presence_interfaces=presence_interfaces)
 
-        pre_msearch_found = self._device_scan_pre_msearch_query(lscape, remaining_query_devices, pre_msearch_timeout, retry)
-        if len(pre_msearch_found) > 0:
-            found_devices.update(pre_msearch_found)
-            matching_devices.update(pre_msearch_found)
+        # Convert query_devices to UpnpDeviceHint objects for discovery
+        device_hints = []
+        for device_hint in query_devices.keys():
+            device_hints.append(UpnpDeviceHint(device_hint))
+
+        # Perform device discovery using UpnpPresence
+        discovery_window = self._presence.discover_devices(
+            limit_to=device_hints,
+            window_length=response_timeout
+        )
+
+        # Wait for discovery to complete
+        discovery_window.wait()
+
+        # Process discovered devices
+        discovered_devices = discovery_window.discovered_devices
+        
+        for device_hint, device_detail in discovered_devices.items():
+            device_evidence = device_detail.device_evidence
             
-            devices_to_remove = []
-            for qdev_usn in remaining_query_devices:
-                if qdev_usn in found_devices:
-                    devices_to_remove.append(qdev_usn)
+            # Create device info structure compatible with existing code
+            device_info = {
+                MSearchKeys.IP: device_evidence.ip,
+                MSearchKeys.LOCATION: device_evidence.location,
+                MSearchKeys.USN_DEV: device_evidence.usn_dev,
+                MSearchKeys.USN_CLS: device_evidence.usn_cls,
+                MSearchKeys.ROUTES: {}
+            }
             
-            # Remove the devices that we found and successfully queried from the list of device to query
-            for fdev_usn in devices_to_remove:
-                remaining_query_devices.remove(fdev_usn)
+            found_devices[device_hint] = device_info
+            matching_devices[device_hint] = device_info
 
-        # ======================== M-SEARCH ========================
-        # We have to first attempt to msearch for the devices because we need the latest
-        # device info to create devices with.
-        if len(remaining_query_devices) > 0:
-            msearch_found, msearch_matching = self._device_msearch_scan(
-                remaining_query_devices, interface_list=interface_list,
-                response_timeout=response_timeout, retry=retry)
-
-            found_devices.update(msearch_found)
-            matching_devices.update(msearch_matching)
-
-            # Remove the devices that we found from the list of device to query for
-            for match_hint in msearch_matching:
-                if match_hint in remaining_query_devices:
-                    remaining_query_devices.remove(match_hint)
-
-        # ====================== UPNP CACHE & DIRECT QUERY ===================
-        # If we didn't find a device with an M-SEARCH, look in the UPNP cache
-        # and try to query the device directly to get its info.  We only use the
-        # cached info to get the IP of the device, we don't use it for other data
-        # because some of the data might be out of date.
-        if len(remaining_query_devices) > 0:
-            # When we look in the cache, the found devices are also the matching devices
-            cache_found = self._device_cache_scan(remaining_query_devices)
-            found_devices.update(cache_found)
-            matching_devices.update(cache_found)
-
-            devices_to_remove = []
-            for qdev_usn in remaining_query_devices:
-                if qdev_usn in cache_found:
-                    cdev_info = cache_found[qdev_usn]
-                    cached_ipaddr = cdev_info[MSearchKeys.IP]
-                    qdev_info = msearch_query_host(qdev_usn, cached_ipaddr)
-                    if qdev_info is not None:
-                        found_devices[fdev_usn] = qdev_info
-                        devices_to_remove.append(fdev_usn)
-
-            # Remove the devices that we found and successfully queried from the list of device to query
-            for fdev_usn in devices_to_remove:
-                remaining_query_devices.remove(fdev_usn)
-
-        # ====================== LAST RESULT, TRY USING THE ARP TABLE ===================
-        if len(remaining_query_devices) > 0:
-            final_found, final_matching = self._device_scan_final_alternatives(remaining_query_devices,
-                interface_list=interface_list, response_timeout=response_timeout,
-                retry=retry)
-
-        missing_devices = []
+        # Check for missing required devices
         if required_devices is not None:
             for devhint in required_devices:
                 if devhint not in matching_devices:
@@ -590,15 +583,18 @@ class UpnpCoordinator(CoordinatorBase):
 
         config_lookup = lscape._internal_get_upnp_device_config_lookup_table() # pylint: disable=protected-access
 
+        # Update root devices with discovered information
         for dhint, dval in matching_devices.items():
             addr = dval[MSearchKeys.IP]
             location = dval[MSearchKeys.LOCATION]
             self._update_root_device(lscape, config_lookup, addr, location, dhint, dval)
 
+        # Setup watchlist devices
         if watchlist is not None and len(watchlist) > 0:
             for hint in watchlist:
                 wdev = self.lookup_device_by_upnp_hint(hint)
-                self._cl_watched_devices[hint] = wdev.basedevice
+                if wdev is not None:
+                    self._cl_watched_devices[hint] = wdev.basedevice
 
         self._log_scan_results(found_devices, matching_devices, missing_devices)
 
@@ -611,6 +607,18 @@ class UpnpCoordinator(CoordinatorBase):
         self._unavailable_devices = missing_devices
 
         return found_devices, matching_devices, missing_devices
+
+    def shutdown(self):
+        """
+            Shuts down the coordinator and cleans up resources including the UpnpPresence.
+        """
+        if self._presence is not None and self._presence.is_running:
+            self._presence.stop()
+            self._presence.cleanup()
+
+        self._running = False
+
+        return
 
     def wakeup_device(self, usn, dev_hint):
         """
@@ -634,35 +642,48 @@ class UpnpCoordinator(CoordinatorBase):
 
             :returns: A upnp root device instance.
         """
-        dev = self._factory.create_root_device_instance(manufacturer, model_number, model_description)
+        # Create a minimal device detail object for the factory method
+        from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
+        from automojo.interop.protocols.upnp.model.description.basic1devicedesc import Basic1DeviceDesc
+        from automojo.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
+        from automojo.interop.protocols.upnp.model.description.specversion import SpecVersion
+        
+        # Create spec version (UPnP 1.0)
+        spec_version = SpecVersion(major=1, minor=0)
+        
+        # Create minimal device description with the provided parameters
+        device_desc = Basic1DeviceDesc(
+            specVersion=spec_version,
+            deviceType="urn:schemas-upnp-org:device:Basic:1",
+            friendlyName=f"{manufacturer} {model_number}",
+            manufacturer=manufacturer,
+            modelName=model_number,
+            modelNumber=model_number,
+            modelDescription=model_description,
+            UDN=f"uuid:{self._local_udn}",
+            serialNumber="",
+            manufacturerURL="",
+            modelURL="",
+            UPC="",
+            presentationURL=""
+        )
+        
+        # Create minimal device evidence (this would normally come from discovery)
+        device_evidence = DeviceEvidence(
+            usn=f"uuid:{self._local_udn}::upnp:rootdevice",
+            status="ssdp:alive",
+            server="Unknown/1.0 UPnP/1.0 Unknown/1.0",
+            location="http://unknown/description.xml",
+            ip="0.0.0.0",
+            other={},
+            presence=self._presence
+        )
+        
+        # Create device detail object that the factory expects
+        device_detail = UpnpDeviceDetail(device_desc, device_evidence)
+        
+        dev = self._factory.create_root_device_instance(device_detail)
         return dev
-
-    def _device_cache_scan(self, query_devices: list):
-        """
-            Scans the local device cache for any of the devices listed in
-            ``query_devices``.
-
-            :param query_devices: List of device hints to search for in the cache.
-
-            :returns: Dictionary of device information keyed by device hint.
-        """
-        found_devices = {}
-
-        for qdev_hint in query_devices:
-            qdev_filename = os.path.join(self._upnp_cache_dir, qdev_hint)
-
-            if os.path.exists(qdev_filename):
-                dev_info = None
-                with open(qdev_filename, 'r') as qdf:
-                    dicontent = qdf.read()
-                    dev_info = yaml.safe_load(dicontent)
-
-                if dev_info is not None:
-                    verified = self._device_cache_verify_device_info(qdev_hint, qdev_filename, dev_info)
-                    if verified:
-                        found_devices[qdev_hint] = dev_info
-
-        return found_devices
 
     def _device_cache_update(self, found_device: dict):
         """
@@ -719,112 +740,6 @@ class UpnpCoordinator(CoordinatorBase):
 
         return valid
 
-    def _device_msearch_scan(self, query_devices: list, interface_list: list, response_timeout: float = 20,
-                             retry: int = 2, custom_headers: Optional[dict]=None):
-        """
-            Performs an M-SEARCH scan looking for the specified devices.
-
-            :param query_devices: List of device hints to search for.
-            :param interface_list: Interfaces to send search requests on.
-            :param response_timeout: Seconds to wait for responses.
-            :param retry: Number of retries to perform.
-            :param custom_headers: Optional extra headers for the search.
-
-            :returns: Tuple of found devices and matching device information.
-        """
-        found_devices = {}
-        matching_devices = {}
-
-        show_progress = False
-        if self._interactive_mode:
-            show_progress = True
-
-        remaining_to_find = [hint for hint in query_devices]
-
-        for ridx in range(0, retry):
-            if ridx > 0:
-                self.logger.info("MSEARCH: Not all devices found, retrying (count=%d)..." % ridx)
-            iter_found_devices, iter_matching_devices = msearch_scan(remaining_to_find,
-                interface_list=interface_list, response_timeout=response_timeout, custom_headers=custom_headers,
-                show_progress=show_progress)
-            found_devices.update(iter_found_devices)
-            matching_devices.update(iter_matching_devices)
-
-            for devusn in matching_devices.keys():
-                if devusn in remaining_to_find:
-                    remaining_to_find.remove(devusn)
-
-            if len(remaining_to_find) == 0:
-                break
-
-        return found_devices, matching_devices
-
-    def _device_scan_final_alternatives(self, query_devices: list, interface_list: list, response_timeout: float = 20, retry: int = 2):
-        """
-            Performs additional attempts to locate devices that were not found
-            during the normal M-SEARCH scan by using ARP table hints and
-            unicast queries.
-
-            :param query_devices: Devices still missing after the initial scan.
-            :param interface_list: List of interfaces to use for queries.
-            :param response_timeout: Seconds to wait for responses.
-            :param retry: Number of retry attempts.
-
-            :returns: Tuple of found devices and matching device information.
-        """
-        found_devices = {}
-        matching_devices = {}
-
-        missing_devices_checklist = [d for d in query_devices]
-
-        # If we are missing some devices, lets try to wake them up and also attempt to find
-        # them in the ARP table.
-        self.logger.info("* Forcing the ARP table to refresh.")
-        refresh_arp_table()
-
-        # Try to use the ARP table to hint about the device
-        self.logger.info("* Looking for device and interface hints in the APR table.")
-        requery_devices = []
-        arp_table = get_arp_table(normalize_hwaddr=True)
-        for dmac, dinfo in arp_table.items():
-            usn_match = None
-            for usn in missing_devices_checklist:
-                usn_norm = usn.replace(":", "").upper()
-                if usn_norm.find(dmac) > -1:
-                    usn_match = usn
-                    break
-
-            if usn_match is not None:
-                missing_devices_checklist.remove(usn_match)
-                requery_devices.append((usn_match, dinfo))
-
-        self.logger.info("* Trying to requery the missing devices.")
-        # As a last resort, rescan for the missing devices directly via unicast.
-        for expusn, dev_hint in requery_devices:
-            try:
-                self.wakeup_device(expusn, dev_hint)
-
-                requery_ip = None
-                if dev_hint is not None:
-                    requery_ip=dev_hint["ip"]
-
-                device_info = msearch_query_host(requery_ip, query_usn=expusn, response_timeout=response_timeout)
-                if device_info is not None:
-                    found_devices[expusn] = device_info
-                    query_devices.remove(expusn)
-
-            except TimeoutError:
-                pass
-
-        return found_devices, matching_devices
-
-    def _device_scan_pre_msearch_query(self, lscape: "Landscape", query_devices: list, timeout: float, interval: float):
-        """
-            This method can be used by derived coordinators to find devices via other protocols
-            prior to the use of the msearch protocol.
-        """
-        return []
-
     def _log_scan_results(self, found_devices: dict, matching_devices:dict , missing_devices: list):
         """
             Logs the results of the device scan.
@@ -873,11 +788,16 @@ class UpnpCoordinator(CoordinatorBase):
         """
             Processes a device alive notification when given the USN and dictionary of header keys and values.
 
-            :param usn: The USN of the device which the notification is from.
+            :param ip_addr: The IP address of the device.
+            :param usn_device: The USN of the device which the notification is from.
+            :param host: The host header from the notification.
             :param request_info: The headers from the notification request.
         """
 
-        ip_addr = request_info[MSearchKeys.IP]
+        if MSearchKeys.LOCATION not in request_info:
+            self.logger.error("Device alive notification missing LOCATION header for USN: %s", usn_device)
+            return
+
         location = request_info[MSearchKeys.LOCATION]
 
         # Get a reference to the landscape
@@ -891,11 +811,11 @@ class UpnpCoordinator(CoordinatorBase):
         """
             Processes a device byebye notification when given the USN and dictionary of header keys and values.
 
-            :param usn: The USN of the device which the notification is from.
+            :param ip_addr: The IP address of the device.
+            :param usn_device: The USN of the device which the notification is from.
+            :param host: The host header from the notification.
             :param request_info: The headers from the notification request.
         """
-
-        ip_addr = request_info[MSearchKeys.IP]
 
         location = "Unknown"
         if MSearchKeys.LOCATION in request_info:
@@ -938,7 +858,7 @@ class UpnpCoordinator(CoordinatorBase):
 
             :param ifname: The name of the ifname the request came from.
             :param claddr: The address of the client that made the callback.
-            :param request: The content of the callback request.
+            :param asock: The socket connection for the callback request.
         """
         # pylint: disable=unused-argument
 
@@ -993,16 +913,7 @@ class UpnpCoordinator(CoordinatorBase):
             self.logger.error("Callback message missing header terminator. claddr=%s", claddr)
             return
 
-        if req_headers is None:
-            self.logger.error("Callback message missing headers. claddr=%s", claddr)
-            return
-
-        req_body_bytes = request[headers_length:]
-        try:
-            req_body = req_body_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            self.logger.error("Failed to decode subscription callback body as UTF-8. claddr=%s", claddr)
-            req_body = req_body_bytes.decode("utf-8", errors="replace")
+        req_body = request[headers_length:]
 
         capture_to = None
         self._coord_lock.acquire()
@@ -1072,6 +983,14 @@ class UpnpCoordinator(CoordinatorBase):
         """
         req_headers, _ = notify_parse_request(request)
 
+        if req_headers is None:
+            self.logger.error("Failed to parse notify request from %s", addr)
+            return
+
+        if "USN" not in req_headers or "HOST" not in req_headers or "NTS" not in req_headers:
+            self.logger.error("Notify request missing required headers from %s", addr)
+            return
+
         usn = req_headers["USN"]
         host = req_headers["HOST"]
         subtype = req_headers["NTS"]
@@ -1107,7 +1026,7 @@ class UpnpCoordinator(CoordinatorBase):
                 else:
                     self._process_service_byebye_notification(ip_addr, usn_device, usn_class, host, req_headers)
             else:
-                self.logger.info("UNKNOWNK NOTIFY - USN: %s HOST: %s SUBTYPE: %s" % (usn, host, subtype))
+                self.logger.info("UNKNOWN NOTIFY - USN: %s HOST: %s SUBTYPE: %s" % (usn, host, subtype))
 
         return
 
@@ -1168,14 +1087,22 @@ class UpnpCoordinator(CoordinatorBase):
 
                 # Release the coordinator lock while starting up the thread so we are not holding it
                 # so the new thread can get access to register itself with internal UpnpCoordinator state
-                self._coord_lock.release()
+                lock_released = False
                 try:
+                    self._coord_lock.release()
+                    lock_released = True
                     cbthread.start()
                     sgate.wait()
+                except Exception:
+                    self._running = False
+                    for _ in range(0, self._worker_count + ifacecount + 1):
+                        self._shutdown_gate.release()
+                    raise
                 finally:
-                    self._coord_lock.acquire()
+                    if lock_released:
+                        self._coord_lock.acquire()
 
-        except:
+        except Exception:
             self._running = False
 
             for _ in range(0, self._worker_count + ifacecount + 1):
@@ -1183,7 +1110,12 @@ class UpnpCoordinator(CoordinatorBase):
 
             raise
         finally:
-            self._coord_lock.release()
+            # Only release the lock if we currently hold it
+            try:
+                self._coord_lock.release()
+            except RuntimeError:
+                # Lock was not held, which is fine in error scenarios
+                pass
 
         return
 
@@ -1245,8 +1177,8 @@ class UpnpCoordinator(CoordinatorBase):
         """
         self._shutdown_gate.acquire()
 
-        multicast_address = UpnpProtocol.MULTICAST_ADDRESS
-        multicast_port = UpnpProtocol.PORT
+        multicast_address = "239.255.255.250"  # SsdpProtocol.MULTICAST_ADDRESS
+        multicast_port = 1900  # SsdpProtocol.PORT
 
         try:
             # Set the start gate to allow the thread spinning us up to continue
@@ -1297,6 +1229,8 @@ class UpnpCoordinator(CoordinatorBase):
             :param sgate: The startup gate that is used to indicate to the thread spinning up the coordinator
             that this worker thread has started.
         """
+        self._shutdown_gate.acquire()
+        
         try:
             # Set the start gate to allow the thread spinning us up to continue
             sgate.set()
@@ -1306,8 +1240,11 @@ class UpnpCoordinator(CoordinatorBase):
 
                 self._queue_lock.acquire()
                 try:
-                    wkfunc, wkargs = self._queue_work.pop(0)
-                    wkfunc(*wkargs)
+                    if len(self._queue_work) > 0:
+                        wkfunc, wkargs = self._queue_work.pop(0)
+                        wkfunc(*wkargs)
+                    else:
+                        self.logger.warning("Worker thread acquired semaphore but queue is empty")
                 except: # pylint: disable=bare-except
                     self.logger.exception("UpnpCoordinator: Worker exception.")
                 finally:
@@ -1349,11 +1286,12 @@ class UpnpCoordinator(CoordinatorBase):
                 devhint = None
                 self._coord_lock.acquire()
                 try:
-                    devhint = self._cl_usn_to_hint[usn_device]
+                    devhint = self._cl_usn_to_hint.get(usn_device)
                 finally:
                     self._coord_lock.release()
 
-                self._update_root_device(lscape, config_lookup, ip_addr, location, devhint, deviceinfo)
+                if devhint is not None:
+                    self._update_root_device(lscape, config_lookup, ip_addr, location, devhint, deviceinfo)
 
         return
 
@@ -1370,7 +1308,7 @@ class UpnpCoordinator(CoordinatorBase):
         """
         dev = self.lookup_device_by_upnp_usn(usn_device)
         if dev is not None:
-            # Mark the device active
+            # Mark the device inactive
             dev.mark_byebye()
 
         return

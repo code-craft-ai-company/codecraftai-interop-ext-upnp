@@ -14,8 +14,6 @@ __credits__ = []
 
 import json
 
-from automojo.networking.constants import HTTP1_1_LINESEP
-
 def xml_format_icon_desc(mimetype: str, width: int, height: int, depth: str, url: str, indent: str = "") -> str:
     """
         Format an icon description as an XML string.
@@ -42,7 +40,8 @@ def xml_format_icon_desc(mimetype: str, width: int, height: int, depth: str, url
         f"{indent}</icon>"
     ]
 
-    desc = HTTP1_1_LINESEP.join(desc_lines)
+    # Use string line separator for XML content
+    desc = "\n".join(desc_lines)
 
     return desc
 
@@ -127,6 +126,6 @@ class IconDesc:
 
             :returns: String representation of the IconDesc object.
         """
-        sval = self.as_xml()
+        sval = self.to_xml()
         return sval
 

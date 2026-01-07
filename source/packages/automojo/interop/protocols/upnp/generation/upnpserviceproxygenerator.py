@@ -24,6 +24,7 @@ from xml.etree.ElementTree import Element
 from xml.etree.ElementTree import fromstring as xml_fromstring
 
 from automojo.xmodules.fspath import ensure_directory_is_package
+from automojo.interop.protocols.upnp.generation.common import parse_service_type
 
 
 # pylint: disable=unused-import
@@ -41,15 +42,15 @@ CONTENT_PROXY_FILE_HEADER = """
 """
 
 
-PROXY_BASE_CLASS_IMPORT = "from mojo.interop.protocols.upnp.services.upnpserviceproxy import UpnpServiceProxy"
+PROXY_BASE_CLASS_IMPORT = "from automojo.interop.protocols.upnp.model.services.upnpserviceproxy import UpnpServiceProxy"
 PROXY_BASE_CLASS_NAME = "UpnpServiceProxy"
 
 
 TEMPLATE_CLASS_PREFIX = """
 
-from mojo.interop.protocols.upnp.aspects import AspectsUPnP, DEFAULT_UPNP_ASPECTS
+from automojo.interop.protocols.upnp.aspects import AspectsUPnP, DEFAULT_UPNP_ASPECTS
 
-from mojo.xmods.extension.dynamic import DynamicExtension
+from automojo.xmodules.extension.dynamic import DynamicExtension
 %(base_class_import)s
 
 class %(class_name)s(%(base_class_name)s, DynamicExtension):
@@ -422,21 +423,37 @@ def generate_service_proxies(svc_desc_directory: str, svc_proxy_directory: str):
                 if not os.path.exists(manufacturerDir):
                     os.makedirs(manufacturerDir)
 
-                service_type_parts = serviceType.split(":")
-                serviceName = service_type_parts[3] + service_type_parts[-1]
+                # Use the existing parse_service_type function for consistent parsing
+                try:
+                    service_agency, service_name_base = parse_service_type(serviceType)
+                    # Extract version from the original serviceType if present
+                    service_type_parts = serviceType.split(":")
+                    if len(service_type_parts) >= 5:
+                        version = service_type_parts[-1]
+                        serviceName = service_name_base + version
+                    else:
+                        serviceName = service_name_base
+                except ValueError as e:
+                    print(f"Warning: Could not parse service type '{serviceType}': {e}", file=sys.stderr)
+                    # Fallback to original logic for backward compatibility
+                    service_type_parts = serviceType.split(":")
+                    if len(service_type_parts) >= 4:
+                        serviceName = service_type_parts[3] + (service_type_parts[-1] if len(service_type_parts) > 4 else "")
+                    else:
+                        serviceName = serviceType.replace(":", "")  # Fallback
 
                 className = serviceName + "ServiceProxy"
                 file_base = className.lower() + ".py"
 
                 dest_file_full = os.path.join(manufacturerDir, file_base)
-                content = generate_upnp_service_proxy(serviceManufacturer, serviceName, serviceType,
+                content = generate_upnp_service_proxy(serviceManufacturer, serviceType, serviceName,
                         className, variablesTable, typesTable, eventsTable, actionsTable)
 
                 with open(dest_file_full, 'w') as df:
                     df.write(content)
 
             else:
-                errmsg = "WARNING: No serice node found in file:\n    %s\n" % fullpath
+                errmsg = "WARNING: No service node found in file:\n    %s\n" % fullpath
                 print(errmsg, file=sys.stderr)
 
     return

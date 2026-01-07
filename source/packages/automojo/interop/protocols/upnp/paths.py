@@ -12,46 +12,72 @@ __copyright__ = "Copyright 2025, Automation Mojo LLC"
 __credits__ = []
 
 
-
 import os
 
-from automojo.xmodules.xcollections.context import Context
-from automojo.presence.contextpaths import ContextPaths
+from automojo.thisapp.appvardesc import AppVarDesc, VariableSource
+from automojo.thisapp.appvaraccessor import AppVarAccessor
+from automojo.thisapp.personavariables import PersonaVariables
+
+from automojo.thisapp.wellknown import ThisApplicationSingleton
+
 
 DIR_UPNP = os.path.dirname(__file__)
 
 
-DIR_UPNP_EXTENSIONS = os.path.join(DIR_UPNP, "extensions")
+def get_home() -> str:
+    rtnval = PersonaVariables.AM_PRESENCE_DIR
+    return rtnval
 
-DIR_UPNP_EXTENSIONS_STANDARD = os.path.join(DIR_UPNP_EXTENSIONS, "standard")
-DIR_UPNP_EXTENSIONS_STANDARD_EMBEDDEDDEVICES = os.path.join(DIR_UPNP_EXTENSIONS_STANDARD, "embeddeddevices")
-DIR_UPNP_EXTENSIONS_STANDARD_ROOTDEVICES = os.path.join(DIR_UPNP_EXTENSIONS_STANDARD, "rootdevices")
-DIR_UPNP_EXTENSIONS_STANDARD_SERVICES = os.path.join(DIR_UPNP_EXTENSIONS_STANDARD, "services")
 
-DIR_UPNP_GENERATOR = os.path.join(DIR_UPNP, "generator")
+class UpnpPathVariablesDesc:
+    DIR_UPNP_EXTENSIONS = AppVarDesc(default=os.path.join(DIR_UPNP, "extensions"), source=VariableSource.NONE)
 
-DIR_UPNP_GENERATOR_STANDARD = os.path.join(DIR_UPNP_GENERATOR, "standard")
-DIR_UPNP_GENERATOR_STANDARD_EMBEDDEDDEVICES = os.path.join(DIR_UPNP_GENERATOR_STANDARD, "embeddeddevices")
-DIR_UPNP_GENERATOR_STANDARD_ROOTDEVICES = os.path.join(DIR_UPNP_GENERATOR_STANDARD, "rootdevices")
-DIR_UPNP_GENERATOR_STANDARD_SERVICES = os.path.join(DIR_UPNP_GENERATOR_STANDARD, "services")
+    DIR_UPNP_EXTENSIONS_STANDARD = AppVarDesc(default=os.path.join(DIR_UPNP, "extensions", "standard"), source=VariableSource.NONE)
+    DIR_UPNP_EXTENSIONS_STANDARD_EMBEDDEDDEVICES = AppVarDesc(default=os.path.join(DIR_UPNP, "extensions", "standard", "embeddeddevices"), source=VariableSource.NONE)
+    DIR_UPNP_EXTENSIONS_STANDARD_ROOTDEVICES = AppVarDesc(default=os.path.join(DIR_UPNP, "extensions", "standard", "rootdevices"), source=VariableSource.NONE)
+    DIR_UPNP_EXTENSIONS_STANDARD_SERVICES = AppVarDesc(default=os.path.join(DIR_UPNP, "extensions", "standard", "services"), source=VariableSource.NONE)
 
-context = Context()
-runtime_home_dir = context.lookup(ContextPaths.PRESENCE_HOME_DIRECTORY, default=os.path.expanduser("~/mjr"))
+    DIR_UPNP_GENERATOR = AppVarDesc(default=os.path.join(DIR_UPNP, "generator"), source=VariableSource.NONE)
 
-DIR_UPNP_EXTENSIONS_INTEGRATION = os.path.join(runtime_home_dir, "upnp", "extensions")
-upnp_extensions_integration_base = context.lookup("/upnp/extensions/integration/base")
-if upnp_extensions_integration_base is not None:
-    DIR_UPNP_EXTENSIONS_INTEGRATION = upnp_extensions_integration_base
+    DIR_UPNP_GENERATOR_STANDARD = AppVarDesc(default=os.path.join(DIR_UPNP, "generator", "standard"), source=VariableSource.NONE)
+    DIR_UPNP_GENERATOR_STANDARD_EMBEDDEDDEVICES = AppVarDesc(default=os.path.join(DIR_UPNP, "generator", "standard", "embeddeddevices"), source=VariableSource.NONE)
+    DIR_UPNP_GENERATOR_STANDARD_ROOTDEVICES = AppVarDesc(default=os.path.join(DIR_UPNP, "generator", "standard", "rootdevices"), source=VariableSource.NONE)
+    DIR_UPNP_GENERATOR_STANDARD_SERVICES = AppVarDesc(default=os.path.join(DIR_UPNP, "generator", "standard", "services"), source=VariableSource.NONE)
 
-DIR_UPNP_EXTENSIONS_INTEGRATION_EMBEDDEDDEVICES = os.path.join(DIR_UPNP_EXTENSIONS_INTEGRATION, "embeddeddevices")
-DIR_UPNP_EXTENSIONS_INTEGRATION_ROOTDEVICES = os.path.join(DIR_UPNP_EXTENSIONS_INTEGRATION, "rootdevices")
-DIR_UPNP_EXTENSIONS_INTEGRATION_SERVICES = os.path.join(DIR_UPNP_EXTENSIONS_INTEGRATION, "services")
+    DIR_UPNP_EXTENSIONS_INTEGRATION = AppVarDesc(default=lambda: os.path.join(get_home(), "upnp", "extensions", "integration"), source=VariableSource.NONE)
+    DIR_UPNP_EXTENSIONS_INTEGRATION_EMBEDDEDDEVICES = AppVarDesc(default=lambda: os.path.join(get_home(), "upnp", "extensions", "integration", "embeddeddevices"), source=VariableSource.NONE)
+    DIR_UPNP_EXTENSIONS_INTEGRATION_ROOTDEVICES = AppVarDesc(default=lambda: os.path.join(get_home(), "upnp", "extensions", "integration", "rootdevices"), source=VariableSource.NONE)
+    DIR_UPNP_EXTENSIONS_INTEGRATION_SERVICES = AppVarDesc(default=lambda: os.path.join(get_home(), "upnp", "extensions", "integration", "services"), source=VariableSource.NONE)
 
-DIR_UPNP_SCAN_INTEGRATION = os.path.join(runtime_home_dir, "upnp", "scan")
-upnp_scan_integration_base = context.lookup("/upnp/extensions/integration/base")
-if upnp_scan_integration_base is not None:
-    DIR_UPNP_SCAN_INTEGRATION = upnp_scan_integration_base
+    DIR_UPNP_SCAN_INTEGRATION = AppVarDesc(default=lambda: os.path.join(get_home(), "upnp", "scan", "integration"), source=VariableSource.NONE)
+    DIR_UPNP_SCAN_INTEGRATION_EMBEDDEDDEVICES = AppVarDesc(default=lambda: os.path.join(get_home(), "upnp", "scan", "integration", "embeddeddevices"), source=VariableSource.NONE)
+    DIR_UPNP_SCAN_INTEGRATION_ROOTDEVICES = AppVarDesc(default=lambda: os.path.join(get_home(), "upnp", "scan", "integration", "rootdevices"), source=VariableSource.NONE)
+    DIR_UPNP_SCAN_INTEGRATION_SERVICES = AppVarDesc(default=lambda: os.path.join(get_home(), "upnp", "scan", "integration", "services"), source=VariableSource.NONE)
 
-DIR_UPNP_SCAN_INTEGRATION_EMBEDDEDDEVICES = os.path.join(DIR_UPNP_SCAN_INTEGRATION, "embeddeddevices")
-DIR_UPNP_SCAN_INTEGRATION_ROOTDEVICES = os.path.join(DIR_UPNP_SCAN_INTEGRATION, "rootdevices")
-DIR_UPNP_SCAN_INTEGRATION_SERVICES = os.path.join(DIR_UPNP_SCAN_INTEGRATION, "services")
+
+class UpnpPathVariables:
+    DIR_UPNP_EXTENSIONS = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_EXTENSIONS)
+
+    DIR_UPNP_EXTENSIONS_STANDARD = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_EXTENSIONS_STANDARD)
+    DIR_UPNP_EXTENSIONS_STANDARD_EMBEDDEDDEVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_EXTENSIONS_STANDARD_EMBEDDEDDEVICES)
+    DIR_UPNP_EXTENSIONS_STANDARD_ROOTDEVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_EXTENSIONS_STANDARD_ROOTDEVICES)
+    DIR_UPNP_EXTENSIONS_STANDARD_SERVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_EXTENSIONS_STANDARD_SERVICES)
+
+    DIR_UPNP_GENERATOR = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_GENERATOR)
+
+    DIR_UPNP_GENERATOR_STANDARD = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_GENERATOR_STANDARD)
+    DIR_UPNP_GENERATOR_STANDARD_EMBEDDEDDEVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_GENERATOR_STANDARD_EMBEDDEDDEVICES)
+    DIR_UPNP_GENERATOR_STANDARD_ROOTDEVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_GENERATOR_STANDARD_ROOTDEVICES)
+    DIR_UPNP_GENERATOR_STANDARD_SERVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_GENERATOR_STANDARD_SERVICES)
+
+    DIR_UPNP_EXTENSIONS_INTEGRATION = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_EXTENSIONS_INTEGRATION)
+    DIR_UPNP_EXTENSIONS_INTEGRATION_EMBEDDEDDEVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_EXTENSIONS_INTEGRATION_EMBEDDEDDEVICES)
+    DIR_UPNP_EXTENSIONS_INTEGRATION_ROOTDEVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_EXTENSIONS_INTEGRATION_ROOTDEVICES)
+    DIR_UPNP_EXTENSIONS_INTEGRATION_SERVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_EXTENSIONS_INTEGRATION_SERVICES)
+
+    DIR_UPNP_SCAN_INTEGRATION = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_SCAN_INTEGRATION)
+    DIR_UPNP_SCAN_INTEGRATION_EMBEDDEDDEVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_SCAN_INTEGRATION_EMBEDDEDDEVICES)
+    DIR_UPNP_SCAN_INTEGRATION_ROOTDEVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_SCAN_INTEGRATION_ROOTDEVICES)
+    DIR_UPNP_SCAN_INTEGRATION_SERVICES = AppVarAccessor(UpnpPathVariablesDesc.DIR_UPNP_SCAN_INTEGRATION_SERVICES)
+
+

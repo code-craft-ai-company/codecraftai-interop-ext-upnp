@@ -24,10 +24,23 @@ def process_spec_version(spec_ver_el: Element, namespaces: Dict[str, str]) -> "S
         :param namespaces: Namespace mapping for XML parsing.
 
         :returns: Parsed :class:`SpecVersion` object.
-    """
         
-    major = int(spec_ver_el.find("major", namespaces=namespaces).text)
-    minor = int(spec_ver_el.find("minor", namespaces=namespaces).text)
+        :raises ValueError: If required elements are missing or invalid.
+    """
+    
+    major_el = spec_ver_el.find("major", namespaces=namespaces)
+    if major_el is None or major_el.text is None:
+        raise ValueError("Missing or empty 'major' element in specVersion")
+    
+    minor_el = spec_ver_el.find("minor", namespaces=namespaces)
+    if minor_el is None or minor_el.text is None:
+        raise ValueError("Missing or empty 'minor' element in specVersion")
+    
+    try:
+        major = int(major_el.text)
+        minor = int(minor_el.text)
+    except ValueError as ex:
+        raise ValueError(f"Invalid version numbers in specVersion: major='{major_el.text}', minor='{minor_el.text}'") from ex
 
     spec_ver = SpecVersion(major=major, minor=minor)
 
@@ -56,7 +69,7 @@ def xml_format_spec_version(
         f"{indent}</specVersion>"
     ]
 
-    desc = "\r\n".join(desc_lines)
+    desc = "\n".join(desc_lines)
 
     return desc
 

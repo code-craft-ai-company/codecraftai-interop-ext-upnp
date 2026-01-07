@@ -14,7 +14,7 @@ __credits__ = []
 from typing import Dict, Type, Union
 
 
-from automojo.presence.wellknown import ConfiguredSuperFactorySingleton
+from automojo.thisapp.wellknown import ConfiguredSuperFactorySingleton
 
 from automojo.interop.protocols.upnp.generation.upnpdeviceclassgenerator import UpnpDeviceClassGenerator
 from automojo.interop.protocols.upnp.upnpextensionprotocol import UpnpFactoryProtocol
@@ -30,7 +30,7 @@ class DeviceClassGeneratorRegistry:
             Initializes the device class registery class.
         """
 
-        self._generators: Dict[str, UpnpDeviceClassGenerator] = {}
+        self._generators: Dict[str, Type[UpnpDeviceClassGenerator]] = {}
 
         self._initialize_generator_table()
         
@@ -52,7 +52,7 @@ class DeviceClassGeneratorRegistry:
 
         return
 
-    def lookup_device_class_generator(self, manufacturer: str) -> Union[UpnpDeviceClassGenerator, None]:
+    def lookup_device_class_generator(self, manufacturer: str) -> Union[Type[UpnpDeviceClassGenerator], None]:
         """
             Get the device class generator for a specific device manufacturer.
         """

@@ -12,7 +12,7 @@ __author__ = "Myron Walker"
 __copyright__ = "Copyright 2025, Automation Mojo LLC"
 __credits__ = []
 
-from typing import Dict, TYPE_CHECKING
+from typing import Dict, Optional, TYPE_CHECKING
 
 import json
 import weakref
@@ -74,9 +74,10 @@ class DeviceEvidence:
         return self._ip
 
     @property
-    def presence(self) -> "UpnpPresence":
+    def presence(self) -> Optional["UpnpPresence"]:
         """
             The UpnpPresence object that recognized the device on the network and created this evidence object.
+            Returns None if the presence object has been garbage collected.
         """
         return self._presence_ref()
 
@@ -110,6 +111,32 @@ class DeviceEvidence:
             the device on the network.
         """
         return self._usn
+    
+    @property
+    def usn_dev(self) -> str:
+        """
+            The device component of the USN identifier. This is the UUID part before the '::' separator.
+        """
+        if "::" in self._usn:
+            dev_part = self._usn.split("::")[0]
+        else:
+            dev_part = self._usn
+        
+        # Remove the "uuid:" prefix if present
+        if dev_part.startswith("uuid:"):
+            return dev_part[5:]  # Remove "uuid:" prefix (5 characters)
+        else:
+            return dev_part
+    
+    @property
+    def usn_cls(self) -> str:
+        """
+            The class component of the USN identifier. This is the service type part after the '::' separator.
+        """
+        if "::" in self._usn:
+            return self._usn.split("::")[1]
+        else:
+            return "upnp:rootdevice"
     
     def as_dict(self) -> Dict[str, str]:
         """

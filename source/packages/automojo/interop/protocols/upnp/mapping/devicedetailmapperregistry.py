@@ -14,7 +14,7 @@ __credits__ = []
 from typing import Dict, Type
 
 
-from automojo.presence.wellknown import ConfiguredSuperFactorySingleton
+from automojo.thisapp.wellknown import ConfiguredSuperFactorySingleton
 
 from automojo.interop.protocols.upnp.mapping.devicedetailmapper import DeviceDetailMapper
 from automojo.interop.protocols.upnp.upnpextensionprotocol import UpnpFactoryProtocol
@@ -30,7 +30,7 @@ class DeviceDetailMapperRegistry:
             Initializes the Singleton initializer class
         """
 
-        self._mappers: Dict[str, DeviceDetailMapper] = {}
+        self._mappers: Dict[str, Type[DeviceDetailMapper]] = {}
 
         self.initialize_mapper_table()
         
@@ -52,14 +52,29 @@ class DeviceDetailMapperRegistry:
 
         return
 
-    def lookup_device_detail_mapper(self, manufacturer: str) -> DeviceDetailMapper:
+    def lookup_device_detail_mapper(self, manufacturer: str) -> Type[DeviceDetailMapper]:
         """
-            Get the detail mapper for a specific device manufacturer.
+            Get the detail mapper class for a specific device manufacturer.
+            
+            :param manufacturer: The manufacturer name to look up a mapper for.
+            
+            :returns: The device detail mapper class for the manufacturer.
+            
+            :raises KeyError: If no mapper is found for the specified manufacturer.
         """
-        mapper = DeviceDetailMapper
-        
         manufacturer = manufacturer.upper()
         if manufacturer in self._mappers:
-            mapper = self._mappers[manufacturer]
+            return self._mappers[manufacturer]
+        else:
+            raise KeyError(f"No device detail mapper found for manufacturer: '{manufacturer}'")
 
-        return mapper
+    def lookup_device_detail_mapper_safe(self, manufacturer: str) -> Type[DeviceDetailMapper]:
+        """
+            Get the detail mapper class for a specific device manufacturer, returning None if not found.
+            
+            :param manufacturer: The manufacturer name to look up a mapper for.
+            
+            :returns: The device detail mapper class for the manufacturer, or None if not found.
+        """
+        manufacturer = manufacturer.upper()
+        return self._mappers.get(manufacturer, None)

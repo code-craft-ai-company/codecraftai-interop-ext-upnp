@@ -27,6 +27,7 @@ from automojo.interop.protocols.upnp.constants import UPNP_DEVICE1_NAMESPACE
 from automojo.interop.protocols.upnp.mapping.devicedetailmapper import DeviceDetailMapper
 
 from automojo.interop.protocols.upnp.model.description.basic1devicedesc import Basic1DeviceDesc
+from automojo.interop.protocols.upnp.model.description.servicedesc import ServiceDesc
 
 from automojo.interop.protocols.upnp.wellknown import DeviceDetailMapperRegistrySingleton
 
@@ -73,9 +74,13 @@ class DeviceQueryManager:
                     
                     if spec_ver is not None and manufacturer is not None:
 
-                        mapper = self._mapper_registry.lookup_device_detail_mapper(manufacturer)
+                        mapper = self._mapper_registry.lookup_device_detail_mapper_safe(manufacturer)
                         
-                        device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=query_url)
+                        if mapper is not None:
+                            device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=query_url)
+                        else:
+                            # Log warning about unknown manufacturer but don't fail completely
+                            logger.warning(f"No device detail mapper found for manufacturer '{manufacturer}'. Device description parsing skipped.")
                     
                 except Exception as parse_err:
                     err_msg = f"Error parsing device description XML: {parse_err}"
@@ -92,14 +97,25 @@ class DeviceQueryManager:
 
         return device_desc
     
-    def query_service_desciption(self, query_url: str) -> Optional[Basic1DeviceDesc]:
+    def query_service_description(self, query_url: str) -> Optional[ServiceDesc]:
         """
             Queries the service description from the given service URL.
 
             :param query_url: The URL of the service to query.
 
-            :returns: Parsed :class:`Basic1DeviceDesc` or ``None`` if the query fails.
+            :returns: Parsed :class:`ServiceDesc` or ``None`` if the query fails.
         """
         service_desc = None
+
+        try:
+            service_desc = ServiceDesc.query_service_description(query_url)
+        except Exception as query_err:
+            err_msg_lines = [
+                f"Error querying service description at {query_url}:"
+            ]
+            err_msg_lines.extend(f"{query_err}".splitlines(False))
+
+            err_msg = os.linesep.join(err_msg_lines)
+            logger.error(err_msg)
 
         return service_desc

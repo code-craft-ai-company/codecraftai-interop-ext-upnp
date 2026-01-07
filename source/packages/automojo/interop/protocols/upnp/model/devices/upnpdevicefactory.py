@@ -13,6 +13,7 @@ __credits__ = []
 
 
 from typing import Union
+import weakref
 
 from automojo.errors.exceptions import SemanticError
 
@@ -22,11 +23,13 @@ from automojo.extension.resource.resourceextension import (
 )
 
 from automojo.xmodules.ximport import import_by_name
-from automojo.xmodules.xcollections.context import Context
+
+from automojo.thisapp.wellknown import ThisApplicationSingleton
 
 from automojo.interop.protocols.upnp.model.description.basic1devicedesc import Basic1DeviceDesc
 from automojo.interop.protocols.upnp.model.description.embeddeddevicedesc import EmbeddedDeviceDesc
 from automojo.interop.protocols.upnp.model.description.serviceevidence import ServiceEvidence
+from automojo.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
 
 from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
 
@@ -73,7 +76,8 @@ class UpnpDeviceFactory:
             self._std_root_device_registry = {}
             self._std_service_registry = {}
 
-            gcontext = Context() 
+            this_app = ThisApplicationSingleton()
+            gcontext = this_app.context 
 
             dyn_ext_module = None
             dyn_ext_module_name = gcontext.lookup("/upnp/extensions/dynamic/module")
@@ -113,7 +117,7 @@ class UpnpDeviceFactory:
         elif extkey in self._std_embedded_device_registry:
             deviceClass = self._std_embedded_device_registry[extkey]
         
-        return deviceClass()
+        return deviceClass(embedded_device_desc)
 
     def create_root_device_instance(self, device_detail: UpnpDeviceDetail) -> UpnpRootDevice:
         """
@@ -140,49 +144,47 @@ class UpnpDeviceFactory:
 
         return dev_inst
 
-    def create_service_instance(self, service_desc: ServiceEvidence) -> Union[UpnpServiceProxy, None]:
+    def create_service_instance(self, service_desc: ServiceEvidence, device_ref: 'weakref.ReferenceType') -> Union[UpnpServiceProxy, None]:
         """
             Method that is called to create an instance of an extension for a specific UPnP service proxy.  If a
             service proxy extension is not found matching the specified parameters then None is returned.
 
             :param service_desc: The service description object that contains the information about the service.
+            :param device_ref: A weak reference to the parent device that owns this service.
 
-            :returns: An instance of an root device extension of a specific manaufacturer or a default generic
-                      UpnpRootDevice.
+            :returns: An instance of a service proxy extension of a specific manufacturer or None if no extension found.
         """
         serviceInst = None
 
         extkey = service_desc.get_extension_key()
+        serviceClass = None
+        
         if extkey in self._dyn_service_registry:
             serviceClass = self._dyn_service_registry[extkey]
-            serviceInst = serviceClass()
         elif extkey in self._std_service_registry:
             serviceClass = self._std_service_registry[extkey]
+        
+        if serviceClass is not None:
             serviceInst = serviceClass()
+            # Properly link the service to its parent device
+            serviceInst._proxy_link_service_to_device(device_ref, service_desc)
 
         return serviceInst
 
 
-    def get_device_detail_processor(self, device_desc: Basic1DeviceDesc) -> UpnpDeviceDetail:
+    def get_device_detail_processor(self, device_desc: Basic1DeviceDesc, evidence: 'DeviceEvidence') -> UpnpDeviceDetail:
         """
-            Method that is called to create an instance of an extension for a specific UPnP device detail processor.
-            If a device detail processor extension is not found matching the specified parameters then None is
-            returned.
+            Method that is called to create an instance of a UPnP device detail processor.
+            This method always returns a UpnpDeviceDetail instance as device detail processors
+            are not extensible like device classes.
 
             :param device_desc: The device description object that contains the information about the device.
+            :param evidence: The device evidence from discovery.
 
-            :returns: An instance of an root device extension of a specific manaufacturer or a default generic
-                      UpnpRootDevice.
+            :returns: An instance of UpnpDeviceDetail containing the device description and evidence.
         """
-        dev_inst = None
-
-        extkey = device_desc.get_extension_key()
-        if extkey in self._dyn_root_device_registry:
-            dev_inst = self._dyn_root_device_registry[extkey]
-        elif extkey in self._std_root_device_registry:
-            dev_inst = self._std_root_device_registry[extkey]
-
-        return dev_inst
+        # UpnpDeviceDetail is not extensible like device classes, so we always return the base class
+        return UpnpDeviceDetail(device_desc, evidence)
 
 
     def _register_root_device(self, extkey, extcls, device_table):
@@ -202,7 +204,7 @@ class UpnpDeviceFactory:
         if extkey not in service_table:
             service_table[extkey] = extcls
         else:
-            service_table[extkey] = extcls
+            raise SemanticError("A service extension with the key=%r was already registered. (%s)" % (extkey, extcls)) from None
         return
 
     def _scan_for_device_extensions_under_code_container(self, container, device_table):
@@ -212,7 +214,7 @@ class UpnpDeviceFactory:
         extcoll = collect_resource_extensions_under_code_container(container, UpnpRootDevice)
         for _, extcls in extcoll:
             if hasattr(extcls, "EXTENSION_KEY"):
-                extkey = getattr(extcls, "EXTENSION_KEY"),
+                extkey = getattr(extcls, "EXTENSION_KEY")
                 self._register_root_device(extkey, extcls, device_table)
         return
 

@@ -54,12 +54,18 @@ def command_am_interop_upnp_scan(window_length: float, factory_modules: List[str
         device_evidence = device.evidence
         device_desc = device.description
 
-        device_name = normalize_model_name(device_desc.modelName)
+        # Handle cases where modelName might be None or missing
+        model_name = getattr(device_desc, 'modelName', None)
+        if model_name is not None:
+            device_name = normalize_model_name(model_name)
+        else:
+            device_name = "unknown_model"
+            
         print(f"Processing Device: {usn} ({type(device_desc).__name__})")
         print(f"  Location: {device_evidence.location}")
-        print(f"  Model: {device_desc.modelName}")
-        print(f"  Manufacturer: {device_desc.manufacturer}")
-        print(f"  Serial Number: {device_desc.serialNumber}")
+        print(f"  Model: {model_name or 'Unknown'}")
+        print(f"  Manufacturer: {getattr(device_desc, 'manufacturer', 'Unknown')}")
+        print(f"  Serial Number: {getattr(device_desc, 'serialNumber', 'Unknown')}")
         print("")
 
         pull_device_description(device_scan_directory, device_name, device_desc)

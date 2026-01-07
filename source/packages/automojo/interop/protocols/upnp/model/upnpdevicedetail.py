@@ -24,12 +24,12 @@ class UpnpDeviceDetail:
         Class to represent UPnP device details.
     """
 
-    def __init__(self, evidence: DeviceEvidence, description: Union[Basic1DeviceDesc, None]):
+    def __init__(self, description: Union[Basic1DeviceDesc, None], evidence: DeviceEvidence):
         """
             Initialize the UPnP device details.
 
-            :param evidence: Evidence about the UPnP device from discovery.
             :param description: Parsed device description object or ``None``.
+            :param evidence: Evidence about the UPnP device from discovery.
         """
         self._evidence = evidence
         self._description = description
@@ -59,7 +59,12 @@ class UpnpDeviceDetail:
             it was found in a hiearchy of code containers.
 
             :returns: A unique path like string that is an identifier used to lookup a device type.
+            
+            :raises ValueError: If the device description is not available.
         """
+        if self._description is None:
+            raise ValueError("Cannot generate extension key: device description is not available")
+        
         extkey = self._description.get_extension_key()
         return extkey
     

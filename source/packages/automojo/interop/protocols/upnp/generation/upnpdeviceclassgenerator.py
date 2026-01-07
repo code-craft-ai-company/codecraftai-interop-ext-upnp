@@ -7,7 +7,7 @@ class UpnpDeviceClassGenerator:
         raise NotImplementedError(f"'get_manufacturer' must be implemented by the '{cls.__name__}' extension")
     
     @classmethod
-    def generate_device_class(description: str) -> None:
+    def generate_device_class(cls, description: str) -> None:
         return
     
     

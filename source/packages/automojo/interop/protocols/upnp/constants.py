@@ -49,7 +49,7 @@ UPNP_SUBSCRIPTION_NOTIFY_RESPONSE_OK = HTTP1_1_LINESEP.join([
     b'Connection: close',
     b'Content-Length: 0',
     b'Content-Type: text/html',
-    b'Server: %s,UPnP/1.0' % UPNP_HEADERS.SERVER.encode(),
+    b'Server: ' + UPNP_HEADERS.SERVER.encode() + b',UPnP/1.0',
     b''
 ])
 

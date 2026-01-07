@@ -32,13 +32,14 @@ def DeviceClassGeneratorRegistrySingleton() -> DeviceClassGeneratorRegistry:
     """
     global DEVICE_CLASS_GENERATOR_REGISTRY_SINGLETON
 
+    # Use double-checked locking pattern for thread safety
     if DEVICE_CLASS_GENERATOR_REGISTRY_SINGLETON is None:
         with _lock:
+            # Check again inside the lock to handle race conditions
             if DEVICE_CLASS_GENERATOR_REGISTRY_SINGLETON is None:
                 DEVICE_CLASS_GENERATOR_REGISTRY_SINGLETON = DeviceClassGeneratorRegistry()
 
     return DEVICE_CLASS_GENERATOR_REGISTRY_SINGLETON
-
 
 
 def DeviceDetailMapperRegistrySingleton() -> DeviceDetailMapperRegistry:
@@ -49,8 +50,10 @@ def DeviceDetailMapperRegistrySingleton() -> DeviceDetailMapperRegistry:
     """
     global DEVICE_DETAIL_MAPPER_REGISTRY_SINGLETON
 
+    # Use double-checked locking pattern for thread safety
     if DEVICE_DETAIL_MAPPER_REGISTRY_SINGLETON is None:
         with _lock:
+            # Check again inside the lock to handle race conditions
             if DEVICE_DETAIL_MAPPER_REGISTRY_SINGLETON is None:
                 DEVICE_DETAIL_MAPPER_REGISTRY_SINGLETON = DeviceDetailMapperRegistry()
 

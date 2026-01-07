@@ -15,8 +15,8 @@ from typing import List, Tuple, TYPE_CHECKING
 
 from automojo.errors.exceptions import SemanticError
 
-from automojo.presence.wellknown import ContextSingleton
-from automojo.presence.contextpaths import ContextPaths
+from automojo.thisapp.wellknown import ThisApplicationSingleton
+from automojo.thisapp.contextpaths import ContextPaths
 
 from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
 from automojo.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
@@ -24,7 +24,6 @@ from automojo.interop.protocols.upnp.upnpsearchwindow import UpnpSearchWindow
 
 from automojo.landscaping.coupling.coordinatorcoupling import CoordinatorCoupling
 
-from automojo.landscaping.coordinators.integrationclasses import INTEGRATION_CLASS_NETWORK_UPNP
 from automojo.landscaping.coordinators.upnp.upnpcoordinator import UpnpCoordinator
 from automojo.landscaping.friendlyidentifier import FriendlyIdentifier
 
@@ -34,6 +33,7 @@ if TYPE_CHECKING:
     from automojo.landscaping.landscape import Landscape
     from automojo.landscaping.landscapedevice import LandscapeDevice
 
+INTEGRATION_CLASS_NETWORK_UPNP = "network/upnp"
 
 def is_upnp_device_config(device_info):
     """
@@ -167,7 +167,8 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
 
         exclude_interfaces = ["lo"]
 
-        context = ContextSingleton()
+        this_app = ThisApplicationSingleton()
+        context = this_app.context
         runtime_exclude_interfaces = context.lookup(ContextPaths.UPNP_EXCLUDE_INTERFACES)
         if runtime_exclude_interfaces is not None:
             exclude_interfaces = runtime_exclude_interfaces
@@ -231,9 +232,13 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
             :returns: A tuple with a list of error messages for failed connections and dict of connectivity
             reports for devices devices based on the coordinator.
         """
+        presence_errors = []
+        presence_results = {}
+        
         if cls.coordinator is not None:
             cls.coordinator.establish_presence()
-        return
+            
+        return (presence_errors, presence_results)
 
     def checkout_upnp_device(self, usn):
         """

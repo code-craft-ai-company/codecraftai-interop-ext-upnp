@@ -20,19 +20,33 @@ def pull_device_description(device_scan_directory: str, device_name: str, device
         :param device_desc: The device description reported by the UPnP discovery process.
     """
     
-    device_ext_dir = os.path.join(device_scan_directory, device_desc.manufacturer)
-    if not os.path.exists(device_ext_dir):
-        os.makedirs(device_ext_dir)
+    try:
+        device_ext_dir = os.path.join(device_scan_directory, device_desc.manufacturer)
+        if not os.path.exists(device_ext_dir):
+            os.makedirs(device_ext_dir)
 
-    device_desc_file = os.path.join(device_ext_dir, f"{device_name}.xml")
-    
-    location_url = device_desc.locationURL
+        device_desc_file = os.path.join(device_ext_dir, f"{device_name}.xml")
+        
+        location_url = device_desc.locationURL
 
-    resp: requests.Response = requests.get(location_url)
-    if resp.status_code == 200:
-        desc_content = resp.content.decode("utf-8")
+        resp: requests.Response = requests.get(location_url, timeout=30)
+        resp.raise_for_status()  # Raises HTTPError for bad HTTP status codes
+        
+        try:
+            desc_content = resp.content.decode("utf-8")
+        except UnicodeDecodeError as ex:
+            print(f"Warning: Failed to decode device description content as UTF-8 for {device_name}: {ex}")
+            return
+            
         with open(device_desc_file, 'w+') as ddf:
             ddf.write(desc_content)
+            
+    except requests.exceptions.RequestException as ex:
+        print(f"Warning: Failed to fetch device description for {device_name} from {location_url}: {ex}")
+    except (IOError, OSError) as ex:
+        print(f"Warning: Failed to write device description file for {device_name}: {ex}")
+    except Exception as ex:
+        print(f"Warning: Unexpected error pulling device description for {device_name}: {ex}")
     
     return
 
@@ -49,20 +63,39 @@ def pull_service_description(service_scan_directory: str, device_desc: Basic1Dev
 
     service_agency, service_name = parse_service_type(service_type)
 
-    service_dir = os.path.join(service_scan_directory, service_agency)
-    if not os.path.exists(service_dir):
-        os.makedirs(service_dir)
+    try:
+        service_dir = os.path.join(service_scan_directory, service_agency)
+        if not os.path.exists(service_dir):
+            os.makedirs(service_dir)
 
-    service_desc_filename = os.path.join(service_dir, f"{service_name.lower()}.xml")
+        service_desc_filename = os.path.join(service_dir, f"{service_name.lower()}.xml")
 
-    if not os.path.exists(service_desc_filename):
-        base_url = device_desc.baseURL.rstrip("/")
-        service_desc_url = f"{base_url}/{service_evidence.SCPDURL.lstrip('/')}"
+        if not os.path.exists(service_desc_filename):
+            base_url = device_desc.baseURL
+            if base_url is None:
+                print(f"Warning: Device {device_desc.friendlyName} has no baseURL, skipping service description for {service_name}")
+                return
+                
+            base_url = base_url.rstrip("/")
+            service_desc_url = f"{base_url}/{service_evidence.SCPDURL.lstrip('/')}"
 
-        resp: requests.Response = requests.get(service_desc_url)
-        if resp.status_code == 200:
-            desc_content = resp.content.decode("utf-8")
+            resp: requests.Response = requests.get(service_desc_url, timeout=30)
+            resp.raise_for_status()  # Raises HTTPError for bad HTTP status codes
+            
+            try:
+                desc_content = resp.content.decode("utf-8")
+            except UnicodeDecodeError as ex:
+                print(f"Warning: Failed to decode service description content as UTF-8 for {service_name}: {ex}")
+                return
+                
             with open(service_desc_filename, 'w+') as sdf:
                 sdf.write(desc_content)
+                
+    except requests.exceptions.RequestException as ex:
+        print(f"Warning: Failed to fetch service description for {service_name} from {service_desc_url}: {ex}")
+    except (IOError, OSError) as ex:
+        print(f"Warning: Failed to write service description file for {service_name}: {ex}")
+    except Exception as ex:
+        print(f"Warning: Unexpected error pulling service description for {service_name}: {ex}")
 
     return

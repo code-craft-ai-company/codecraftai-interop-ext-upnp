@@ -50,7 +50,7 @@ class UpnpErrorCodes(Enum):
     """
     InvalidAction = 401
     InvalidArgs = 402
-    DepricatedA = 403
+    Deprecated = 403
     ActionFailed = 501
     ArgumentValueInvalid = 600
     ArgumentValueOutOfRange = 601
@@ -70,7 +70,7 @@ class UpnpErrorCodes(Enum):
 UPNP_ERROR_TEST_LOOKUP = {
     401: "Invalid Action",
     402: "Invalid Arguments",
-    403: "Depricated Error Code",
+    403: "Deprecated Error Code",
     501: "Action Failed",
     600: "Argument Value Invalid",
     601: "Argument Value Out of Range",

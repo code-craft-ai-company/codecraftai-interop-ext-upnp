@@ -37,5 +37,5 @@ class EmbeddedDeviceDesc(Basic1DeviceDesc):
         """
         super().__init__(specVersion=specVersion, deviceType=deviceType, friendlyName=friendlyName, manufacturer=manufacturer, manufacturerURL=manufacturerURL,
                          modelDescription=modelDescription, modelName=modelName, modelNumber=modelNumber, modelURL=modelURL, serialNumber=serialNumber, UDN=UDN,
-                         UPC=UPC, deviceList=deviceList, iconList=iconList, serviceList=serviceList, locationURL=locationURL, **extras)
+                         UPC=UPC, presentationURL=presentationURL, deviceList=deviceList, iconList=iconList, serviceList=serviceList, locationURL=locationURL, **extras)
         return

@@ -15,14 +15,16 @@ from typing import Optional
 
 from xml.etree.ElementTree import Element
 
-def process_state_table(service_state_table_el: Element, namespaces: Optional[dict] = None) -> dict:
+def process_state_table(service_state_table_el: Element, namespaces: Optional[dict] = None) -> tuple:
     """
         Parse the ``serviceStateTable`` element of a service description.
 
         :param service_state_table_el: Element containing the state table.
         :param namespaces: Optional namespace mapping for XML parsing.
 
-        :returns: Tuple of variable, argument and event tables.
+        :returns: Tuple of (variablesTable, typesTable, eventsTable) dictionaries.
+        
+        :raises ValueError: If required XML elements are missing or invalid.
     """
     # pylint: disable=no-self-use
     variablesTable = {}
@@ -31,8 +33,17 @@ def process_state_table(service_state_table_el: Element, namespaces: Optional[di
 
     state_variable_el_list = service_state_table_el.findall("stateVariable", namespaces=namespaces)
     for state_variable_el in state_variable_el_list:
-        name = state_variable_el.find("name", namespaces=namespaces).text
-        dataType = state_variable_el.find("dataType", namespaces=namespaces).text
+        # Get variable name with proper null checking
+        nameNode = state_variable_el.find("name", namespaces=namespaces)
+        if nameNode is None or nameNode.text is None:
+            raise ValueError("State variable missing required 'name' element")
+        name = nameNode.text
+        
+        # Get data type with proper null checking
+        dataTypeNode = state_variable_el.find("dataType", namespaces=namespaces)
+        if dataTypeNode is None or dataTypeNode.text is None:
+            raise ValueError(f"State variable '{name}' missing required 'dataType' element")
+        dataType = dataTypeNode.text
 
         varInfo = { "name": name, "dataType": dataType}
         if name.startswith("A_ARG_TYPE_"):

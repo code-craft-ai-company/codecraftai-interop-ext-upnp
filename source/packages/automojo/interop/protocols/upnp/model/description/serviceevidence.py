@@ -12,8 +12,6 @@ __author__ = "Myron Walker"
 __copyright__ = "Copyright 2025, Automation Mojo LLC"
 __credits__ = []
 
-from automojo.networking.constants import HTTP1_1_LINESEP
-
 def xml_format_service_desc(
     serviceType: str,
     serviceId: str,
@@ -45,7 +43,8 @@ def xml_format_service_desc(
         f"{indent}</service>"
     ]
 
-    desc = HTTP1_1_LINESEP.join(desc_lines)
+    # Use string line separator for XML content
+    desc = "\n".join(desc_lines)
 
     return desc
 

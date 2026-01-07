@@ -45,41 +45,66 @@ class ServiceDesc:
     @classmethod
     def load_service_description(cls, serv_desc_file: str) -> "ServiceDesc":
         """
-            Downloads and processes the service description document.
+            Loads a service description from a file and processes the service description content.
 
             :param serv_desc_file: The file path of the service description document to process.
+            
+            :raises FileNotFoundError: If the service description file cannot be found.
+            :raises ValueError: If the service description content is invalid or cannot be processed.
         """
-        svcdesc = None
+        try:
+            with open(serv_desc_file, 'r') as sdf:
+                xml_content = sdf.read()
 
-        namespaces = {"": UPNP_SERVICE1_NAMESPACE}
-
-        with open(serv_desc_file, 'r') as sdf:
-            xml_content = sdf.read()
-
-            try:
-                descDoc = xml_fromstring(xml_content)
-
-                specVersionNode = descDoc.find("specVersion", namespaces=namespaces)
-                specVersion = process_spec_version(specVersionNode, namespaces=namespaces)
-
-                serviceStateTableNode = descDoc.find("serviceStateTable", namespaces=namespaces)
-                variablesTable, typesTable, eventsTable = process_state_table(serviceStateTableNode, namespaces=namespaces)
-
-                serviceStateTables = ServiceStateTables(variablesTable=variablesTable, typesTable=typesTable, eventsTable=eventsTable)
-
-                actionListNode = descDoc.find("actionList", namespaces=namespaces)
-                actionsTable = process_action_list(actionListNode, namespaces=namespaces)
-
-                svcdesc = ServiceDesc(
-                    specVersion=specVersion,
-                    serviceStateTables=serviceStateTables,
-                    actionsTable=actionsTable,
-                )
-            except Exception:
-                print("Service Description Failure: %s" % serv_desc_file)
-                raise
+            svcdesc = cls.process_service_description(xml_content)
+        except ValueError as ex:
+            # Re-raise ValueError with file context
+            errmsg = f"Service Description Failure for file '{serv_desc_file}': {str(ex)}"
+            raise ValueError(errmsg) from ex
+        except FileNotFoundError:
+            errmsg = f"Service description file not found: '{serv_desc_file}'"
+            raise FileNotFoundError(errmsg)
+        except Exception as ex:
+            errmsg = f"Unexpected error loading service description from '{serv_desc_file}': {str(ex)}"
+            raise ValueError(errmsg) from ex
 
         return svcdesc
+
+    @classmethod
+    def process_service_description(cls, serv_desc_content: str) -> "ServiceDesc":
+        """
+            Process the service description content to create a service description.
+
+            :param serv_desc_content: The XML content of a service description.
+            
+            :raises ValueError: If the service description content is invalid or cannot be processed.
+        """
+        namespaces = {"": UPNP_SERVICE1_NAMESPACE}
+
+        try:
+            descDoc = xml_fromstring(serv_desc_content)
+
+            specVersionNode = descDoc.find("specVersion", namespaces=namespaces)
+            specVersion = process_spec_version(specVersionNode, namespaces=namespaces)
+
+            serviceStateTableNode = descDoc.find("serviceStateTable", namespaces=namespaces)
+            variablesTable, typesTable, eventsTable = process_state_table(serviceStateTableNode, namespaces=namespaces)
+
+            serviceStateTables = ServiceStateTables(variablesTable=variablesTable, typesTable=typesTable, eventsTable=eventsTable)
+
+            actionListNode = descDoc.find("actionList", namespaces=namespaces)
+            actionsTable = process_action_list(actionListNode, namespaces=namespaces)
+
+            svc_desc = ServiceDesc(
+                specVersion=specVersion,
+                serviceStateTables=serviceStateTables,
+                actionsTable=actionsTable,
+            )
+        except Exception as ex:
+            errmsg = f"Failed to process service description content: {str(ex)}"
+            raise ValueError(errmsg) from ex
+            
+        return svc_desc
 
     @classmethod
     def query_service_description(cls, serv_desc_url: str) -> "ServiceDesc":
@@ -87,37 +112,28 @@ class ServiceDesc:
             Downloads and processes the service description document.
 
             :param serv_desc_url: The url of the service description document to process.
+            
+            :raises ValueError: If the service description cannot be downloaded or processed.
+            :raises requests.RequestException: If there's a network error during the request.
         """
-        svcdesc = None
-
-        resp: requests.Response = requests.get(serv_desc_url)
-        if resp.status_code == 200:
-            svcdesc = {}
-
-            namespaces = {"": UPNP_SERVICE1_NAMESPACE}
-
-            try:
-                xml_content = resp.text
-                descDoc = xml_fromstring(xml_content)
-
-                specVersionNode = descDoc.find("specVersion", namespaces=namespaces)
-                specVersion = process_spec_version(specVersionNode, namespaces=namespaces)
-
-                serviceStateTableNode = descDoc.find("serviceStateTable", namespaces=namespaces)
-                variablesTable, typesTable, eventsTable = process_state_table(serviceStateTableNode, namespaces=namespaces)
-
-                serviceStateTables = ServiceStateTables(variablesTable=variablesTable, typesTable=typesTable, eventsTable=eventsTable)
-
-                actionListNode = descDoc.find("actionList", namespaces=namespaces)
-                actionsTable = process_action_list(actionListNode, namespaces=namespaces)
-
-                svcdesc = ServiceDesc(
-                    specVersion=specVersion,
-                    serviceStateTables=serviceStateTables,
-                    actionsTable=actionsTable,
-                )
-            except Exception:
-                print("Service Description Failure: %s" % serv_desc_url)
-                raise
+        try:
+            resp: requests.Response = requests.get(serv_desc_url, timeout=30)
+            resp.raise_for_status()  # Raises HTTPError for bad HTTP status codes
+            
+            svcdesc = cls.process_service_description(resp.text)
+            
+        except requests.exceptions.HTTPError as ex:
+            errmsg = f"HTTP error downloading service description from '{serv_desc_url}': {ex.response.status_code} {ex.response.reason}"
+            raise ValueError(errmsg) from ex
+        except requests.exceptions.RequestException as ex:
+            errmsg = f"Network error downloading service description from '{serv_desc_url}': {str(ex)}"
+            raise ValueError(errmsg) from ex
+        except ValueError as ex:
+            # Re-raise ValueError from process_service_description with URL context
+            errmsg = f"Service Description Failure for URL '{serv_desc_url}': {str(ex)}"
+            raise ValueError(errmsg) from ex
+        except Exception as ex:
+            errmsg = f"Unexpected error downloading service description from '{serv_desc_url}': {str(ex)}"
+            raise ValueError(errmsg) from ex
 
         return svcdesc

@@ -51,7 +51,7 @@ class AspectsUPnP:
                        monitor_delay: float = DEFAULT_MONITOR_DELAY,
                        logging_pattern: LoggingPattern = DEFAULT_LOGGING_PATTERN,
                        retry_logging_interval: int = DEFAULT_RETRY_LOGGING_INTERVAL,
-                       allowed_error_codes: List[int] = DEFAULT_ALLOWED_ERROR_CODES,
+                       allowed_error_codes: Optional[List[int]] = None,
                        must_connect: bool = DEFAULT_MUST_CONNECT,
                        logger: Optional[logging.Logger]=None):
         """
@@ -77,7 +77,7 @@ class AspectsUPnP:
         self.monitor_delay=monitor_delay
         self.logging_pattern=logging_pattern
         self.retry_logging_interval=retry_logging_interval
-        self.allowed_error_codes=allowed_error_codes
+        self.allowed_error_codes=allowed_error_codes if allowed_error_codes is not None else DEFAULT_ALLOWED_ERROR_CODES
         self.must_connect=must_connect
         self.logger=logger
         return
