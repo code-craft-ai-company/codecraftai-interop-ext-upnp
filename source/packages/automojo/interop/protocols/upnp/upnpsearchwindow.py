@@ -128,11 +128,8 @@ class UpnpSearchWindow:
             :param device_detail: The :class:`UpnpDeviceDetail` object describing the device.
         """
 
-        self._lock.acquire()
-        try:
+        with self._lock:
             self._devices_found[identifier] = device_detail
-        finally:
-            self._lock.release()
 
         return
 
@@ -142,15 +139,8 @@ class UpnpSearchWindow:
             Check if the search window is active.  This method will return True if the search window is active, otherwise False.
         """
 
-        rtnval = False
-
-        self._lock.acquire()
-        try:
-            rtnval = self._window_state == UpnpSearchWindowState.ACTIVE
-        finally:
-            self._lock.release()
-
-        return rtnval
+        with self._lock:
+            return self._window_state == UpnpSearchWindowState.ACTIVE
 
 
     def start(self):
@@ -182,27 +172,18 @@ class UpnpSearchWindow:
             :returns: ``True`` if the window closed before timeout, otherwise ``False``.
         """
 
-        completed_successfully = False
-
-        try:
-            self._lock.acquire()
-
+        # Check initial state
+        with self._lock:
             if self._window_state == UpnpSearchWindowState.INACTIVE:
                 raise RuntimeError("The search window is not active.")
-
-            if self._window_state == UpnpSearchWindowState.ACTIVE:
-                try:
-                    self._lock.release()
-                
-                    completed_successfully = self._wait_gate.wait(timeout=timeout)
-                finally:
-                    self._lock.acquire()
-            else:
+            
+            if self._window_state != UpnpSearchWindowState.ACTIVE:
                 # Window is already completed or timed out
-                completed_successfully = True
+                return True
 
-        finally:
-            self._lock.release()
+        # Wait for completion without holding the lock
+        # The monitor thread will set the wait gate when the window closes
+        completed_successfully = self._wait_gate.wait(timeout=timeout)
 
         return completed_successfully
 

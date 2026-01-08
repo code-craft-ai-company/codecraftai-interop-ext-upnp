@@ -31,13 +31,17 @@ def parse_device_type(device_type_str: str) -> Tuple[str, str]:
         
         :raises ValueError: If the device_type_str is not a valid device URN format.
     """
-    parts = device_type_str.split(":", maxsplit=3)
+    parts = device_type_str.split(":")
     
-    if len(parts) != 4:
-        errmsg = f"The device string provided '{device_type_str}' does not have the expected format 'urn:agency:device:name'."
+    if len(parts) < 5:
+        errmsg = f"The device string provided '{device_type_str}' does not have the expected format 'urn:agency:device:name:version'."
         raise ValueError(errmsg)
     
-    scheme, agency, dev_label, device_name = parts
+    scheme = parts[0]
+    agency = parts[1]
+    dev_label = parts[2]
+    device_name = parts[3]
+    # version = parts[4] (not used in return but validates format)
 
     if scheme.lower() != "urn":
         errmsg = f"The device string provided '{device_type_str}' is not a urn."
@@ -46,8 +50,6 @@ def parse_device_type(device_type_str: str) -> Tuple[str, str]:
     if dev_label.lower() != "device":
         errmsg = f"The device string provided '{device_type_str}' is not a device string."
         raise ValueError(errmsg)
-
-    device_name = device_name.replace(":", "")
 
     return agency, device_name
 
@@ -62,13 +64,17 @@ def parse_service_type(service_type_str: str) -> Tuple[str, str]:
         
         :raises ValueError: If the service_type_str is not a valid service URN format.
     """
-    parts = service_type_str.split(":", maxsplit=3)
+    parts = service_type_str.split(":")
     
-    if len(parts) != 4:
-        errmsg = f"The service string provided '{service_type_str}' does not have the expected format 'urn:agency:service:name'."
+    if len(parts) < 5:
+        errmsg = f"The service string provided '{service_type_str}' does not have the expected format 'urn:agency:service:name:version'."
         raise ValueError(errmsg)
     
-    scheme, agency, svc_label, service_name = parts
+    scheme = parts[0]
+    agency = parts[1]
+    svc_label = parts[2]
+    service_name = parts[3]
+    # version = parts[4] (not used in return but validates format)
 
     if scheme.lower() != "urn":
         errmsg = f"The service string provided '{service_type_str}' is not a urn."
@@ -77,8 +83,6 @@ def parse_service_type(service_type_str: str) -> Tuple[str, str]:
     if svc_label.lower() != "service":
         errmsg = f"The service string provided '{service_type_str}' is not a service string."
         raise ValueError(errmsg)
-
-    service_name = service_name.replace(":", "")
 
     return agency, service_name
 

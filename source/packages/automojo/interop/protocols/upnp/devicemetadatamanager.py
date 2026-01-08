@@ -79,10 +79,12 @@ class DeviceMetadataManager:
                     spec_ver, manufacturer = DeviceDetailMapper.read_spec_version_and_manufacturer(root_el, default_namespaces)
                     
                     if spec_ver is not None and manufacturer is not None:
-
-                        mapper = self._mapper_registry.lookup_device_detail_mapper(manufacturer)
-                        
-                        device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=desc_filename)
+                        try:
+                            mapper = self._mapper_registry.lookup_device_detail_mapper(manufacturer)
+                            device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=desc_filename)
+                        except KeyError:
+                            # No specific mapper found for this manufacturer, log and skip
+                            logger.warning("No device detail mapper found for manufacturer '%s'. Skipping device description processing.", manufacturer)
                     
                 except Exception as parse_err:
                     err_msg = f"Error parsing device description XML: {parse_err}"
@@ -99,13 +101,17 @@ class DeviceMetadataManager:
         """
             Load a service description from the device service cache.
 
-            :raises: FileNotFound error and XML Parse Errors
+            :param service_evidence: Service evidence containing the service type information.
+
+            :returns: Parsed :class:`ServiceDesc` or None if not found or invalid.
         """
         service_type = service_evidence.serviceType
 
-        parse_service_type(service_type)
-
-        service_agency, service_name = parse_service_type(service_type)
+        try:
+            service_agency, service_name = parse_service_type(service_type)
+        except ValueError as parse_err:
+            logger.warning(f"Invalid service type format '{service_type}': {parse_err}")
+            return None
 
         service_agency = service_agency.lower()
         service_name = service_name.lower()
@@ -122,6 +128,10 @@ class DeviceMetadataManager:
         desc_content = None
 
         if os.path.exists(service_desc_filename):
-            desc_content = ServiceDesc.load_service_description(service_desc_filename)
+            try:
+                desc_content = ServiceDesc.load_service_description(service_desc_filename)
+            except (ValueError, FileNotFoundError) as load_err:
+                logger.error(f"Error loading service description from '{service_desc_filename}': {load_err}")
+                return None
 
         return desc_content

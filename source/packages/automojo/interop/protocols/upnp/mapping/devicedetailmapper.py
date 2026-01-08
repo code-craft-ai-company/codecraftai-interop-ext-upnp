@@ -218,19 +218,51 @@ class DeviceDetailMapper:
                 tag = full_tag[UPNP_DEVICE1_NAMESPACE_PREFIX_END:]
 
                 if tag == "icon":
+                    # Get mimetype with null checking
                     propEl = nxtEl.find("mimetype", namespaces=namespaces)
+                    if propEl is None or propEl.text is None:
+                        logger.warning("Icon missing required 'mimetype' element, skipping")
+                        continue
                     mimetype = propEl.text
 
+                    # Get width with null checking
                     propEl = nxtEl.find("width", namespaces=namespaces)
-                    width = int(propEl.text)
+                    if propEl is None or propEl.text is None:
+                        logger.warning("Icon missing required 'width' element, skipping")
+                        continue
+                    try:
+                        width = int(propEl.text)
+                    except ValueError:
+                        logger.warning(f"Icon has invalid 'width' value: '{propEl.text}', skipping")
+                        continue
 
+                    # Get height with null checking
                     propEl = nxtEl.find("height", namespaces=namespaces)
-                    height = int(propEl.text)
+                    if propEl is None or propEl.text is None:
+                        logger.warning("Icon missing required 'height' element, skipping")
+                        continue
+                    try:
+                        height = int(propEl.text)
+                    except ValueError:
+                        logger.warning(f"Icon has invalid 'height' value: '{propEl.text}', skipping")
+                        continue
 
+                    # Get depth with null checking
                     propEl = nxtEl.find("depth", namespaces=namespaces)
-                    depth = int(propEl.text)
+                    if propEl is None or propEl.text is None:
+                        logger.warning("Icon missing required 'depth' element, skipping")
+                        continue
+                    try:
+                        depth = int(propEl.text)
+                    except ValueError:
+                        logger.warning(f"Icon has invalid 'depth' value: '{propEl.text}', skipping")
+                        continue
 
+                    # Get url with null checking
                     propEl = nxtEl.find("url", namespaces=namespaces)
+                    if propEl is None or propEl.text is None:
+                        logger.warning("Icon missing required 'url' element, skipping")
+                        continue
                     url = propEl.text
 
                     iconInfo = IconDesc(mimetype=mimetype, width=width, height=height, depth=depth, url=url)
@@ -261,7 +293,10 @@ class DeviceDetailMapper:
                 tag = full_tag[UPNP_DEVICE1_NAMESPACE_PREFIX_END:]
 
                 if tag == "device":
+                    # Validate that deviceType exists (required for embedded devices)
                     propEl = nxtEl.find("deviceType", namespaces=namespaces)
+                    if propEl is None or propEl.text is None:
+                        raise ValueError("Embedded device missing required 'deviceType' element")
                     deviceType = propEl.text
 
                     svcInfo = cls._process_device(root_el, nxtEl, namespaces, specVersion, is_embedded=True)
@@ -294,19 +329,34 @@ class DeviceDetailMapper:
                 tag = full_tag[UPNP_DEVICE1_NAMESPACE_PREFIX_END:]
 
                 if tag == "service":
+                    # Get serviceType with null checking
                     propEl = nxtEl.find("serviceType", namespaces=namespaces)
+                    if propEl is None or propEl.text is None:
+                        raise ValueError("Service missing required 'serviceType' element")
                     serviceType = propEl.text
 
+                    # Get serviceId with null checking
                     propEl = nxtEl.find("serviceId", namespaces=namespaces)
+                    if propEl is None or propEl.text is None:
+                        raise ValueError("Service missing required 'serviceId' element")
                     serviceId = propEl.text
 
+                    # Get SCPDURL with null checking
                     propEl = nxtEl.find("SCPDURL", namespaces=namespaces)
+                    if propEl is None or propEl.text is None:
+                        raise ValueError("Service missing required 'SCPDURL' element")
                     SCPDURL = propEl.text
 
+                    # Get controlURL with null checking
                     propEl = nxtEl.find("controlURL", namespaces=namespaces)
+                    if propEl is None or propEl.text is None:
+                        raise ValueError("Service missing required 'controlURL' element")
                     controlURL = propEl.text
 
+                    # Get eventSubURL with null checking
                     propEl = nxtEl.find("eventSubURL", namespaces=namespaces)
+                    if propEl is None or propEl.text is None:
+                        raise ValueError("Service missing required 'eventSubURL' element")
                     eventSubURL = propEl.text
 
                     svcInfo = ServiceEvidence(serviceType=serviceType, serviceId=serviceId, controlURL=controlURL, eventSubURL=eventSubURL, SCPDURL=SCPDURL)
@@ -324,10 +374,26 @@ class DeviceDetailMapper:
             :param namespaces: Namespace mapping for XML parsing.
 
             :returns: Parsed :class:`SpecVersion` instance.
+            
+            :raises ValueError: If required elements are missing or invalid.
         """
+        
+        if spec_ver_el is None:
+            raise ValueError("specVersion element is None")
 
-        major = int(spec_ver_el.find("major", namespaces=namespaces).text)
-        minor = int(spec_ver_el.find("minor", namespaces=namespaces).text)
+        major_el = spec_ver_el.find("major", namespaces=namespaces)
+        if major_el is None or major_el.text is None:
+            raise ValueError("Missing or empty 'major' element in specVersion")
+        
+        minor_el = spec_ver_el.find("minor", namespaces=namespaces)
+        if minor_el is None or minor_el.text is None:
+            raise ValueError("Missing or empty 'minor' element in specVersion")
+        
+        try:
+            major = int(major_el.text)
+            minor = int(minor_el.text)
+        except ValueError as ex:
+            raise ValueError(f"Invalid version numbers in specVersion: major='{major_el.text}', minor='{minor_el.text}'") from ex
 
         spec_ver = SpecVersion(major=major, minor=minor)
 

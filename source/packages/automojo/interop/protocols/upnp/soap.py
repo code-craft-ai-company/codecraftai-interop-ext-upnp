@@ -279,31 +279,74 @@ class SoapProcessor:
             docNode = xml_fromstring(content.encode('utf8'))
 
         resp_body = None
-        if typed:
-            resp_body = docNode.find(".//{%s}Fault" % (NS_SOAP_ENV,))
-        else:
+        # Try multiple approaches to find the Fault element to handle non-compliant devices
+        
+        # First, try the correct SOAP envelope namespace
+        resp_body = docNode.find(".//{%s}Fault" % (NS_SOAP_ENV,))
+        
+        # If not found, try without namespace (for non-compliant devices)
+        if resp_body is None:
             resp_body = docNode.find(".//Fault")
+        
+        # If still not found and typed is provided, try with the service namespace 
+        # (some devices might incorrectly use this)
+        if resp_body is None and typed:
+            resp_body = docNode.find(".//{%s}Fault" % (typed,))
 
         if resp_body is None:
-            msg = ('Returned XML did not include an element which matches namespace %r and tag name'
-                   ' \'%sFault\'.' % (typed, action_name))
+            msg = ('Returned XML did not include a SOAP Fault element. Tried SOAP envelope namespace (%r), '
+                   'no namespace, and service namespace (%r).' % (NS_SOAP_ENV, typed))
             print(msg + '\n' + xml_tostring(docNode, short_empty_elements=False).decode('utf8'))
             raise SOAPProtocolError(msg)
 
         # Lets try to extract the XML response error information
         try:
-            faultCode = resp_body.find(".//faultcode").text
-            faultString = resp_body.find(".//faultstring").text
-            detail = resp_body.find(".//detail")
-            upnpErrorNode = detail.find(".//{%s}UPnPError" % NS_UPNP_CONTROL)
-            errorCode = int(upnpErrorNode.find(".//{%s}errorCode" % NS_UPNP_CONTROL).text)
+            faultCodeNode = resp_body.find(".//faultcode")
+            if faultCodeNode is None or faultCodeNode.text is None:
+                raise SOAPProtocolError("SOAP Fault missing required 'faultcode' element or empty content")
+            faultCode = faultCodeNode.text
             
+            faultStringNode = resp_body.find(".//faultstring")
+            if faultStringNode is None or faultStringNode.text is None:
+                raise SOAPProtocolError("SOAP Fault missing required 'faultstring' element or empty content")
+            faultString = faultStringNode.text
+            
+            detail = resp_body.find(".//detail")
+            if detail is None:
+                raise SOAPProtocolError("SOAP Fault missing required 'detail' element")
+                
+            # Try multiple approaches to find UPnPError for non-compliant devices
+            upnpErrorNode = detail.find(".//{%s}UPnPError" % NS_UPNP_CONTROL)
+            if upnpErrorNode is None:
+                # Try without namespace for non-compliant devices
+                upnpErrorNode = detail.find(".//UPnPError")
+            if upnpErrorNode is None:
+                raise SOAPProtocolError("SOAP Fault detail missing required 'UPnPError' element")
+                
+            # Try multiple approaches to find errorCode for non-compliant devices
+            errorCodeNode = upnpErrorNode.find(".//{%s}errorCode" % NS_UPNP_CONTROL)
+            if errorCodeNode is None:
+                errorCodeNode = upnpErrorNode.find(".//errorCode")
+            if errorCodeNode is None or errorCodeNode.text is None:
+                raise SOAPProtocolError("UPnPError missing required 'errorCode' element")
+            errorCode = int(errorCodeNode.text)
+            
+            # Try multiple approaches to find errorDescription for non-compliant devices
             errorDescriptionNode = upnpErrorNode.find(".//{%s}errorDescription" % NS_UPNP_CONTROL)
+            if errorDescriptionNode is None:
+                errorDescriptionNode = upnpErrorNode.find(".//errorDescription")
             if errorDescriptionNode is not None and errorDescriptionNode.text is not None:
                 errorDescription = errorDescriptionNode.text
             else:
                 errorDescription = UPNP_ERROR_TEST_LOOKUP.get(errorCode, "Unknown error.")
 
+        except SOAPProtocolError:
+            # Re-raise SOAP protocol errors as-is
+            raise
+        except ValueError as ve:
+            # Handle int conversion errors specifically
+            errmsg = "Invalid errorCode value in UPnP error response: %s" % str(ve)
+            raise SOAPProtocolError(errmsg) from ve
         except Exception as xcpt:
             errmsg = "Unable to process xml response: status=%r\n%s" % (status_code, content)
             if extra is not None:

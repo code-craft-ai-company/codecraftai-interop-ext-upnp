@@ -14,14 +14,14 @@ __credits__ = []
 
 import json
 
-def xml_format_icon_desc(mimetype: str, width: int, height: int, depth: str, url: str, indent: str = "") -> str:
+def xml_format_icon_desc(mimetype: str, width: int, height: int, depth: int, url: str, indent: str = "") -> str:
     """
         Format an icon description as an XML string.
 
         :param mimetype: MIME type of the icon.
         :param width: Width of the icon.
         :param height: Height of the icon.
-        :param depth: Color depth of the icon.
+        :param depth: Color depth of the icon in bits.
         :param url: URL of the icon.
         :param indent: Indentation for the XML string.
 
@@ -50,14 +50,14 @@ class IconDesc:
         Class representing an icon description in a UPnP 'iconList' xml segment.
     """
 
-    def __init__(self, *, mimetype: str, width: int, height: int, depth: str, url: str):
+    def __init__(self, *, mimetype: str, width: int, height: int, depth: int, url: str):
         """
             Initialize the IconDesc object.
 
             :param mimetype: MIME type of the icon.
             :param width: Width of the icon.
             :param height: Height of the icon.
-            :param depth: Color depth of the icon.
+            :param depth: Color depth of the icon in bits.
             :param url: URL of the icon.
             
         """
@@ -110,6 +110,17 @@ class IconDesc:
         )
 
         return desc
+
+    def as_xml(self, indent="") -> str:
+        """
+            Convert the IconDesc object to an XML string.
+            This method provides compatibility with the interface expected by device descriptions.
+
+            :param indent: Indentation for the XML string.
+
+            :returns: XML string representation of the IconDesc object.
+        """
+        return self.to_xml(indent=indent)
 
     def __repr__(self) -> str:
         """

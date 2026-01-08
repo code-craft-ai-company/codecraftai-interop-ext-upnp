@@ -112,7 +112,7 @@ def xml_format_basic1_device_desc(iconList: Optional[List[IconDesc]] = None, ser
         f'{indent}</root>'
     ])
 
-    desc = HTTP1_1_LINESEP.join(desc_lines)
+    desc = '\n'.join(desc_lines)
 
     return desc
 

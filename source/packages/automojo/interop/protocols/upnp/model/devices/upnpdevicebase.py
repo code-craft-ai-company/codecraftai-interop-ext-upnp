@@ -247,9 +247,10 @@ class UpnpDeviceBase:
             if service_key in self._services:
                 svc = self._services[service_key]
 
-            elif factory is not None:
+            elif factory is not None and service_key in self._service_descriptions:
                 svc_desc = self._service_descriptions[service_key]
 
+                # Release lock during service creation to avoid potential deadlocks
                 self._device_lock.release()
                 try:
                     device_ref = weakref.ref(self)
@@ -257,6 +258,7 @@ class UpnpDeviceBase:
                 finally:
                     self._device_lock.acquire()
 
+                # Now that we have the lock again, safely update the services
                 if svc is not None:
                     self._services[service_key] = svc
         finally:
@@ -328,15 +330,34 @@ class UpnpDeviceBase:
 
                 service_url = self._urlBase.rstrip("/") + "/" + service_url.lstrip("/")
 
-                svc_desc_resp: requests.Response = requests.get(service_url)
-                if svc_desc_resp.status_code == 200:
+                try:
+                    svc_desc_resp: requests.Response = requests.get(service_url, timeout=30)
+                    svc_desc_resp.raise_for_status()  # Raises HTTPError for bad HTTP status codes
+                    
                     # If we were able to obtain the service description document, then we can process it in order to
                     # get the extended service description information needed to lookup any pre-existing code generated
                     # service interop proxy classes.
-
                     svckey = serviceInfo.get_extension_key()
-
-                    service_descriptions[svckey] = ServiceDesc.process_service_description(svc_desc_resp.text)
+                    
+                    try:
+                        service_descriptions[svckey] = ServiceDesc.process_service_description(svc_desc_resp.text)
+                    except Exception as parse_err:
+                        logger.warning("Failed to parse service description for service %s at URL %s: %s", 
+                                     serviceInfo.serviceId, service_url, str(parse_err))
+                        # Continue processing other services even if one fails to parse
+                        
+                except requests.exceptions.Timeout:
+                    logger.warning("Timeout retrieving service description for service %s at URL %s", 
+                                 serviceInfo.serviceId, service_url)
+                except requests.exceptions.HTTPError as http_err:
+                    logger.warning("HTTP error retrieving service description for service %s at URL %s: %s", 
+                                 serviceInfo.serviceId, service_url, str(http_err))
+                except requests.exceptions.RequestException as req_err:
+                    logger.warning("Network error retrieving service description for service %s at URL %s: %s", 
+                                 serviceInfo.serviceId, service_url, str(req_err))
+                except Exception as general_err:
+                    logger.error("Unexpected error retrieving service description for service %s at URL %s: %s", 
+                               serviceInfo.serviceId, service_url, str(general_err))
 
         self._device_lock.acquire()
         try:

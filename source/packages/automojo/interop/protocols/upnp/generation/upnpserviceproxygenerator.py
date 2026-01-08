@@ -264,7 +264,11 @@ def process_action_list(svcActionListNode: Element, namespaces: Optional[dict] =
 
     actionNodeList = svcActionListNode.findall("action", namespaces=namespaces)
     for actionNode in actionNodeList:
-        action_name = node_strip_text(actionNode.find("name", namespaces=namespaces).text)
+        action_name_node = actionNode.find("name", namespaces=namespaces)
+        if action_name_node is None:
+            continue  # Skip actions without names
+        action_name = node_strip_text(action_name_node.text)
+        
         args_in_keys = []
         args_in_table = {}
         args_out_keys = []
@@ -275,8 +279,15 @@ def process_action_list(svcActionListNode: Element, namespaces: Optional[dict] =
             argumentNodeList = argumentListNode.findall("argument", namespaces=namespaces)
             for argumentNode in argumentNodeList:
                 arg_info = {}
-                arg_name = node_strip_text(argumentNode.find("name", namespaces=namespaces).text)
-                arg_direction = node_lower_strip_text(argumentNode.find("direction", namespaces=namespaces).text)
+                
+                arg_name_node = argumentNode.find("name", namespaces=namespaces)
+                arg_direction_node = argumentNode.find("direction", namespaces=namespaces)
+                
+                if arg_name_node is None or arg_direction_node is None:
+                    continue  # Skip arguments missing required fields
+                    
+                arg_name = node_strip_text(arg_name_node.text)
+                arg_direction = node_lower_strip_text(arg_direction_node.text)
 
                 arg_related = None
                 argRelatedNode = argumentNode.find("relatedStateVariable", namespaces=namespaces)
@@ -329,7 +340,10 @@ def process_service_state_table(svcStateTableNode: Element, namespaces: Optional
 
         variable_info = {}
 
-        var_name = node_strip_text(stateVariableNode.find("name", namespaces=namespaces).text)
+        var_name_node = stateVariableNode.find("name", namespaces=namespaces)
+        if var_name_node is None:
+            continue  # Skip variables without names
+        var_name = node_strip_text(var_name_node.text)
         variable_info["name"] = var_name
 
         send_events = "no"
@@ -342,8 +356,10 @@ def process_service_state_table(svcStateTableNode: Element, namespaces: Optional
 
         variable_info["sendEvents"] = send_events
 
-
-        var_type = stateVariableNode.find("dataType", namespaces=namespaces).text.strip()
+        var_type_node = stateVariableNode.find("dataType", namespaces=namespaces)
+        if var_type_node is None:
+            continue  # Skip variables without data types
+        var_type = var_type_node.text.strip()
         variable_info["dataType"] = var_type
 
         allowedValueListNode = stateVariableNode.find("allowedValueList", namespaces=namespaces)
@@ -430,17 +446,46 @@ def generate_service_proxies(svc_desc_directory: str, svc_proxy_directory: str):
                     service_type_parts = serviceType.split(":")
                     if len(service_type_parts) >= 5:
                         version = service_type_parts[-1]
-                        serviceName = service_name_base + version
+                        # Only append version if it's not already in the service name and version is numeric
+                        if version.isdigit() and not service_name_base.endswith(version):
+                            serviceName = service_name_base + version
+                        else:
+                            serviceName = service_name_base
                     else:
                         serviceName = service_name_base
                 except ValueError as e:
                     print(f"Warning: Could not parse service type '{serviceType}': {e}", file=sys.stderr)
-                    # Fallback to original logic for backward compatibility
+                    # Consistent fallback logic for backward compatibility
                     service_type_parts = serviceType.split(":")
                     if len(service_type_parts) >= 4:
-                        serviceName = service_type_parts[3] + (service_type_parts[-1] if len(service_type_parts) > 4 else "")
+                        # Use the service name part (4th element in URN format)
+                        service_name_part = service_type_parts[3]
+                        # Sanitize the service name part
+                        service_name_part = service_name_part.replace("-", "")
+                        
+                        if len(service_type_parts) >= 5:
+                            version_part = service_type_parts[4]
+                            # Only append version if it's numeric and not already present
+                            if version_part.isdigit() and not service_name_part.endswith(version_part):
+                                serviceName = service_name_part + version_part
+                            else:
+                                serviceName = service_name_part
+                        else:
+                            serviceName = service_name_part
                     else:
-                        serviceName = serviceType.replace(":", "")  # Fallback
+                        # Last resort: create a safe service name from the entire service type
+                        # Remove URN prefix and sanitize
+                        safe_name = serviceType
+                        if safe_name.startswith("urn:"):
+                            # Remove common URN prefixes to shorten the name
+                            safe_name = safe_name.replace("urn:schemas-upnp-org:service:", "")
+                            safe_name = safe_name.replace("urn:", "")
+                        # Replace problematic characters and limit length
+                        safe_name = safe_name.replace(":", "").replace("-", "").replace(".", "")
+                        # Limit to reasonable length and ensure it starts with a letter
+                        serviceName = safe_name[:50] if safe_name else "UnknownService"
+                        if len(serviceName) == 0 or not serviceName[0].isalpha():
+                            serviceName = "Service" + serviceName if len(serviceName) > 0 else "UnknownService"
 
                 className = serviceName + "ServiceProxy"
                 file_base = className.lower() + ".py"

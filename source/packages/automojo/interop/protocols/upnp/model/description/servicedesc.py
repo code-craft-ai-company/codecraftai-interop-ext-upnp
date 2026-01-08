@@ -79,21 +79,37 @@ class ServiceDesc:
             
             :raises ValueError: If the service description content is invalid or cannot be processed.
         """
-        namespaces = {"": UPNP_SERVICE1_NAMESPACE}
-
         try:
             descDoc = xml_fromstring(serv_desc_content)
 
+            # Extract namespace from the root element if present
+            namespaces = {"": UPNP_SERVICE1_NAMESPACE}  # Default fallback
+            doc_node_tag = descDoc.tag
+            if doc_node_tag.find("}") > 0:
+                # Extract namespace from the root element tag
+                default_ns = doc_node_tag[doc_node_tag.find("{") + 1:doc_node_tag.find("}")]
+                namespaces = {"": default_ns}
+
             specVersionNode = descDoc.find("specVersion", namespaces=namespaces)
+            if specVersionNode is None:
+                raise ValueError("Service description missing required 'specVersion' element")
             specVersion = process_spec_version(specVersionNode, namespaces=namespaces)
 
             serviceStateTableNode = descDoc.find("serviceStateTable", namespaces=namespaces)
-            variablesTable, typesTable, eventsTable = process_state_table(serviceStateTableNode, namespaces=namespaces)
+            if serviceStateTableNode is not None:
+                variablesTable, typesTable, eventsTable = process_state_table(serviceStateTableNode, namespaces=namespaces)
+            else:
+                # No serviceStateTable element means no state variables are defined for this service
+                variablesTable, typesTable, eventsTable = {}, {}, {}
 
             serviceStateTables = ServiceStateTables(variablesTable=variablesTable, typesTable=typesTable, eventsTable=eventsTable)
 
             actionListNode = descDoc.find("actionList", namespaces=namespaces)
-            actionsTable = process_action_list(actionListNode, namespaces=namespaces)
+            if actionListNode is not None:
+                actionsTable = process_action_list(actionListNode, namespaces=namespaces)
+            else:
+                # No actionList element means no actions are defined for this service
+                actionsTable = {}
 
             svc_desc = ServiceDesc(
                 specVersion=specVersion,

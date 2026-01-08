@@ -46,7 +46,6 @@ class UpnpDefaultVar:
         self._data_type = data_type
         self._default = default
         self._allowed_list = allowed_list
-        self._timestamp = None
         
         if evented:
             errmsg = "UpnpDefaultVar constructor was called for a variabled that is evented."
@@ -54,15 +53,27 @@ class UpnpDefaultVar:
 
         self._expires = None
 
-        if self._value is not None and timestamp is None:
-            self._timestamp  = datetime.now()
-
+        # Handle default value assignment first
         if value is None and default is not None:
             self._value = default
 
-        self._created = timestamp
-        self._updated = timestamp
-        self._changed = timestamp
+        # Initialize timestamps consistently
+        if timestamp is not None:
+            self._created = timestamp
+            self._updated = timestamp
+            self._changed = timestamp
+        else:
+            # If no timestamp provided and we have a value, use current time
+            if self._value is not None:
+                now = datetime.now()
+                self._created = now
+                self._updated = now
+                self._changed = now
+            else:
+                # No value and no timestamp - leave as None until first update
+                self._created = None
+                self._updated = None
+                self._changed = None
         return
 
     @property

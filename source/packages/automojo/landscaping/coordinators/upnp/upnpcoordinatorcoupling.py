@@ -76,6 +76,11 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
             The default contructor for an :class:`UpnpCoordinatorIntegration`.
         """
         super(UpnpCoordinatorIntegration, self).__init__(*args, **kwargs)
+        
+        # Initialize device pool tracking dictionaries
+        self.upnp_devices_pool = {}
+        self.upnp_devices_inuse = {}
+        
         return
 
     @classmethod
@@ -96,7 +101,9 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
                 if is_upnp_device_config(dev_config):
                     identifier = dev_config.get("hint", "")
                     if len(identifier) == 0:
-                        identifier = dev_config["USN"]
+                        identifier = dev_config.get("USN", "")
+                        if len(identifier) == 0:
+                            raise ValueError("UPnP device configuration must provide either 'hint' or 'USN' identifier")
 
                     cls.lookup_upnp_device_config[identifier] = dev_config
 
@@ -186,7 +193,9 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
                 if is_upnp_device_config(dev_config):
                     identifier = dev_config.get("hint", "")
                     if len(identifier) == 0:
-                        identifier = dev_config["USN"]
+                        identifier = dev_config.get("USN", "")
+                        if len(identifier) == 0:
+                            raise ValueError("UPnP device configuration must provide either 'hint' or 'USN' identifier")
 
                     cls.lookup_upnp_device[identifier] = dev
 

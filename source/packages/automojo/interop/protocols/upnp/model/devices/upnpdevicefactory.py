@@ -82,18 +82,33 @@ class UpnpDeviceFactory:
             dyn_ext_module = None
             dyn_ext_module_name = gcontext.lookup("/upnp/extensions/dynamic/module")
             if dyn_ext_module_name is not None:
-                dyn_ext_module = import_by_name(dyn_ext_module_name)
+                try:
+                    dyn_ext_module = import_by_name(dyn_ext_module_name)
+                except (ImportError, ModuleNotFoundError, AttributeError) as ex:
+                    # Log the error but continue initialization without the dynamic module
+                    # This allows the factory to still work with standard extensions
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        "Failed to import dynamic UPnP extension module '%s': %s. "
+                        "Continuing with standard extensions only.", 
+                        dyn_ext_module_name, str(ex)
+                    )
+                    dyn_ext_module = None
 
             dyn_ext_folder = gcontext.lookup("/upnp/extensions/dynamic/folder")
 
             if dyn_ext_module is not None:
                 self._scan_for_device_extensions_under_code_container(dyn_ext_module, self._dyn_root_device_registry)
+                self._scan_for_embedded_device_extensions_under_code_container(dyn_ext_module, self._dyn_embedded_device_registry)
                 self._scan_for_service_extensions_under_code_container(dyn_ext_module, self._dyn_service_registry)
             elif dyn_ext_folder is not None:
                 self._scan_for_device_extensions_under_folder(dyn_ext_folder, self._dyn_root_device_registry)
+                self._scan_for_embedded_device_extensions_under_folder(dyn_ext_folder, self._dyn_embedded_device_registry)
                 self._scan_for_service_extensions_under_folder(dyn_ext_folder, self._dyn_service_registry)
             
             self._scan_for_device_extensions_under_code_container(standard_extensions, self._std_root_device_registry)
+            self._scan_for_embedded_device_extensions_under_code_container(standard_extensions, self._std_embedded_device_registry)
             self._scan_for_service_extensions_under_code_container(standard_extensions, self._std_service_registry)
 
         return
@@ -165,9 +180,16 @@ class UpnpDeviceFactory:
             serviceClass = self._std_service_registry[extkey]
         
         if serviceClass is not None:
-            serviceInst = serviceClass()
-            # Properly link the service to its parent device
-            serviceInst._proxy_link_service_to_device(device_ref, service_desc)
+            try:
+                serviceInst = serviceClass()
+                # Properly link the service to its parent device
+                serviceInst._proxy_link_service_to_device(device_ref, service_desc)
+            except Exception as ex:
+                # Log the error but return None to indicate service creation failed
+                # This prevents partial service instances from being returned
+                serviceInst = None
+                # Re-raise the exception to allow caller to handle it appropriately
+                raise
 
         return serviceInst
 
@@ -197,6 +219,16 @@ class UpnpDeviceFactory:
             raise SemanticError("A root device extension with the key=%r was already registered. (%s)" % (extkey, extcls)) from None
         return
 
+    def _register_embedded_device(self, extkey, extcls, device_table):
+        """
+            Method that registers the extension class of a specific type of embedded device.
+        """
+        if extkey not in device_table:
+            device_table[extkey] = extcls
+        else:
+            raise SemanticError("An embedded device extension with the key=%r was already registered. (%s)" % (extkey, extcls)) from None
+        return
+
     def _register_service(self, extkey, extcls, service_table):
         """
             Method that registers the extension class of a specific type of service proxy.
@@ -216,6 +248,17 @@ class UpnpDeviceFactory:
             if hasattr(extcls, "EXTENSION_KEY"):
                 extkey = getattr(extcls, "EXTENSION_KEY")
                 self._register_root_device(extkey, extcls, device_table)
+        return
+
+    def _scan_for_embedded_device_extensions_under_code_container(self, container, device_table):
+        """
+            Method that scans a code container and its descendants for UpnpEmbeddedDevice objects.
+        """
+        extcoll = collect_resource_extensions_under_code_container(container, UpnpEmbeddedDevice)
+        for _, extcls in extcoll:
+            if hasattr(extcls, "EXTENSION_KEY"):
+                extkey = getattr(extcls, "EXTENSION_KEY")
+                self._register_embedded_device(extkey, extcls, device_table)
         return
 
     def _scan_for_service_extensions_under_code_container(self, container, service_table):
@@ -238,6 +281,17 @@ class UpnpDeviceFactory:
             if hasattr(extcls, "EXTENSION_KEY"):
                 extkey = getattr(extcls, "EXTENSION_KEY")
                 self._register_root_device(extkey, extcls, device_table)
+        return
+
+    def _scan_for_embedded_device_extensions_under_folder(self, directory, device_table):
+        """
+            Method that scans a folder and its descendants for UpnpEmbeddedDevice objects.
+        """
+        extcoll = collect_resource_extensions_under_folder(directory, UpnpEmbeddedDevice)
+        for _, extcls in extcoll:
+            if hasattr(extcls, "EXTENSION_KEY"):
+                extkey = getattr(extcls, "EXTENSION_KEY")
+                self._register_embedded_device(extkey, extcls, device_table)
         return
 
     def _scan_for_service_extensions_under_folder(self, directory, service_table):

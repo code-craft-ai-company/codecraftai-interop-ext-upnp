@@ -87,23 +87,27 @@ SSDP_IPV6_MULTICAST_ADDRESS_ORG_LOCAL="FF08::C"
 SSDP_IPV6_MULTICAST_ADDRESS_GLOBAL_LOCAL="FF0E::"
 
 
-def notify_parse_request(content: bytes) -> dict:
+def notify_parse_request(content: bytes) -> Tuple[Dict[str, str], str]:
     """
         Takes in the content of the NOTIFY request and parses it into a
         python dictionary object.
         
         :param content: Notify request content as bytes.
         
-        :returns: A python dictionary with key and values from the Notify request
+        :returns: A tuple containing (headers_dict, body_content) from the Notify request
     """
-    content = content.decode('utf-8')
+    try:
+        content = content.decode('utf-8')
+    except UnicodeDecodeError as e:
+        logger.error("Failed to decode NOTIFY request content as UTF-8: %s", e)
+        return {}, ""
 
     resp_headers = {}
+    body_content = ""
 
     mobj = REGEX_NOTIFY_HEADER.search(content)
     if mobj is not None:
         header_content = None
-        body_content = None
 
         if content.find("\r\n\r\n") > -1:
             header_content, body_content = content.split("\r\n\r\n", 1)
@@ -115,7 +119,8 @@ def notify_parse_request(content: bytes) -> dict:
         resplines = header_content.splitlines(False)
 
         # Pop the NOTIFY header
-        resplines.pop(0).strip()
+        if len(resplines) > 0:
+            resplines.pop(0).strip()
 
         for nxtline in resplines:
             cidx = nxtline.find(":")
@@ -124,9 +129,7 @@ def notify_parse_request(content: bytes) -> dict:
                 val = nxtline[cidx+1:].strip()
                 resp_headers[key] = val
 
-    return resp_headers
-
-    return resp_headers, resp_body
+    return resp_headers, body_content
 
 
 def parse_http_headers(header_content: bytes) -> Tuple[str, Dict[str, str]]:
@@ -147,9 +150,13 @@ def parse_http_headers(header_content: bytes) -> Tuple[str, Dict[str, str]]:
     for hline in header_lines[1:]:
         name_end = hline.find(b":")
         if name_end > -1:
-            hname = hline[:name_end].upper().decode().strip()
-            hval = hline[name_end + 1:].decode().strip()
-            headers[hname] = hval
+            try:
+                hname = hline[:name_end].upper().decode().strip()
+                hval = hline[name_end + 1:].decode().strip()
+                headers[hname] = hval
+            except UnicodeDecodeError as e:
+                logger.error("Failed to decode HTTP header as UTF-8: %s", e)
+                continue
 
     return req_line, headers
 
@@ -163,7 +170,11 @@ def parse_ssdp_message(content: bytes) -> Dict[str, str]:
         
         :returns: A python dictionary with key and values from the MSearch response
     """
-    content = content.decode('utf-8')
+    try:
+        content = content.decode('utf-8')
+    except UnicodeDecodeError as e:
+        logger.error("Failed to decode SSDP message content as UTF-8: %s", e)
+        return {}
 
     respinfo = None
 
@@ -406,10 +417,19 @@ class UpnpPresence:
             # to force the socket to be re-freshed
             self._lock.acquire()
             try:
-                if sock is not None:
-                    sock.close()
-
-                self._msearch_sock = None
+                # Close the socket we were using if it's still the current socket
+                if self._msearch_sock is sock:
+                    try:
+                        self._msearch_sock.close()
+                    except Exception:
+                        pass  # Ignore errors when closing socket
+                    self._msearch_sock = None
+                elif sock is not None:
+                    # If it's a different socket, still try to close our local reference
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass  # Ignore errors when closing socket
             finally:
                 self._lock.release()
             raise
@@ -427,20 +447,21 @@ class UpnpPresence:
         self._lock.acquire()
         try:
             if usn in self._embedded_device_notifications_by_usn:
-
-                # Dont make any calls while holding the upnp presence lock, make a copy of the receipients list
+                # Don't make any calls while holding the upnp presence lock, make a copy of the recipients list
                 # and release the lock before dispatching the notifications to registered callbacks
-                receipients = [r for r in self._embedded_device_notifications_by_usn[usn]]
-
-                self._lock.release()
-                try:
-                    for callback in receipients:
-                        callback(ifname, from_ip, usn, nt, nts, msg_info)
-                finally:
-                    self._lock.acquire()
-
+                recipients = [r for r in self._embedded_device_notifications_by_usn[usn]]
+            else:
+                recipients = []
         finally:
             self._lock.release()
+
+        # Dispatch callbacks outside the lock to avoid holding it during potentially long operations
+        for callback in recipients:
+            try:
+                callback(ifname, from_ip, usn, nt, nts, msg_info)
+            except Exception as ex:
+                # Log callback errors but don't let them stop other callbacks
+                logger.error("Error in embedded device notification callback: %s", ex)
 
         return
 
@@ -455,20 +476,21 @@ class UpnpPresence:
         self._lock.acquire()
         try:
             if usn in self._root_device_notifications_by_usn:
-
-                # Dont make any calls while holding the upnp presence lock, make a copy of the receipients list
+                # Don't make any calls while holding the upnp presence lock, make a copy of the recipients list
                 # and release the lock before dispatching the notifications to registered callbacks
-                receipients = [r for r in self._root_device_notifications_by_usn[usn]]
-
-                self._lock.release()
-                try:
-                    for callback in receipients:
-                        callback(ifname, from_ip, usn, nt, nts, msg_info)
-                finally:
-                    self._lock.acquire()
-
+                recipients = [r for r in self._root_device_notifications_by_usn[usn]]
+            else:
+                recipients = []
         finally:
             self._lock.release()
+
+        # Dispatch callbacks outside the lock to avoid holding it during potentially long operations
+        for callback in recipients:
+            try:
+                callback(ifname, from_ip, usn, nt, nts, msg_info)
+            except Exception as ex:
+                # Log callback errors but don't let them stop other callbacks
+                logger.error("Error in root device notification callback: %s", ex)
 
         return
 
@@ -486,20 +508,21 @@ class UpnpPresence:
         self._lock.acquire()
         try:
             if usn in self._service_notifications_by_usn:
-
-                # Dont make any calls while holding the upnp presence lock, make a copy of the receipients list
+                # Don't make any calls while holding the upnp presence lock, make a copy of the recipients list
                 # and release the lock before dispatching the notifications to registered callbacks
-                receipients = [r for r in self._service_notifications_by_usn[usn]]
-
-                self._lock.release()
-                try:
-                    for callback in receipients:
-                        callback(ifname, from_ip, usn, nt, nts, msg_info)
-                finally:
-                    self._lock.acquire()
-
+                recipients = [r for r in self._service_notifications_by_usn[usn]]
+            else:
+                recipients = []
         finally:
             self._lock.release()
+
+        # Dispatch callbacks outside the lock to avoid holding it during potentially long operations
+        for callback in recipients:
+            try:
+                callback(ifname, from_ip, usn, nt, nts, msg_info)
+            except Exception as ex:
+                # Log callback errors but don't let them stop other callbacks
+                logger.error("Error in service notification callback: %s", ex)
 
         return
 
@@ -587,7 +610,10 @@ class UpnpPresence:
                         sock.sendto(response_msg, from_endpoint)
 
                 else:
-                    response = response.decode()
+                    try:
+                        response = response.decode()
+                    except UnicodeDecodeError:
+                        response = response.decode('utf-8', errors='replace')
                     response = indent_lines(response, 1, indent=4)
 
                     dbgmsg_lines = [
@@ -598,7 +624,10 @@ class UpnpPresence:
                     dbgmsg = os.linesep.join(dbgmsg_lines)
                     logger.debug(dbgmsg)
             else:
-                response = response.decode()
+                try:
+                    response = response.decode()
+                except UnicodeDecodeError:
+                    response = response.decode('utf-8', errors='replace')
                 response = indent_lines(response, 1, indent=4)
 
                 dbgmsg_lines = [
@@ -685,7 +714,10 @@ class UpnpPresence:
             else:
                 logger.debug(f"REPLY: from={from_ip} USN=<not found>")
         else:
-            message = message.decode()
+            try:
+                message = message.decode()
+            except UnicodeDecodeError:
+                message = message.decode('utf-8', errors='replace')
             message = indent_lines(message, 1, indent=4)
 
             dbgmsg_lines = [
@@ -757,7 +789,10 @@ class UpnpPresence:
                 logger.debug(f"REPLY: from={from_ip} USN=<not found>")
                 
         else:
-            response = response.decode()
+            try:
+                response = response.decode()
+            except UnicodeDecodeError:
+                response = response.decode('utf-8', errors='replace')
             response = indent_lines(response, 1, indent=4)
 
             dbgmsg_lines = [
@@ -901,9 +936,13 @@ class UpnpPresence:
             nxtheader = None
             try:
                 nxtheader = "SID"
+                if nxtheader not in resp_headers:
+                    raise KeyError(f"Missing required '{nxtheader}' header in subscription response")
                 sub_sid = resp_headers[nxtheader]
 
                 nxtheader = "TIMEOUT"
+                if nxtheader not in resp_headers:
+                    raise KeyError(f"Missing required '{nxtheader}' header in subscription response")
                 sub_timeout_str = resp_headers[nxtheader]
 
                 sub_timeout = None
@@ -920,8 +959,13 @@ class UpnpPresence:
                     sub_expires = datetime.now() + timedelta(seconds=sub_timeout)
                     self._lock.acquire()
                     try:
-                        if renew and sid is not None and sid != sub_sid:
-                            self._subscription_to_callback.pop(sid, None)
+                        if renew and sid is not None:
+                            if sid != sub_sid:
+                                # Server returned different SID during renewal - this is unexpected
+                                logger.warning("Server returned different SID during renewal. Expected: %s, Got: %s", sid, sub_sid)
+                                # Remove the old callback since server gave us a new SID
+                                self._subscription_to_callback.pop(sid, None)
+                            # For renewal, always update/replace the callback mapping
                         self._subscription_to_callback[sub_sid] = service_event_callback
                     finally:
                         self._lock.release()
@@ -1007,7 +1051,6 @@ class UpnpPresence:
 
         self._lock.acquire()
         try:
-
             if self._running:
                 raise RuntimeError("SSDP Scanner is already running.")
             
@@ -1018,41 +1061,37 @@ class UpnpPresence:
             # If running was False, the we are uninitialed and non of the threads have been created or started, set running
             # to true and begin the startup of all threads.
             self._running = True
-
-            self._lock.release()
-            try:
-                sgate = threading.Event()
-
-                dispatch_pool = LooperPool(Looper, "am-upnp-dispatch", min_loopers=5, max_loopers=10, highwater=5, daemon=True)
-                dispatch_pool.start_pool()
-
-                self._dispatch_pool = dispatch_pool
-
-                for ifname in self._presence_interfaces:
-
-                    # We need a presence thread and callback thread for each interface we want to support
-                    sgate.clear()
-                    presence_thread = threading.Thread(target=self._thread_entry_for_presence, name=f"am-upnp-presence-{ifname}", args=(sgate, ifname), daemon=True)
-                    presence_thread.start()
-                    sgate.wait()
-
-                    sgate.clear()
-                    callback_thread = threading.Thread(target=self._thread_entry_for_callback, name=f"am-upnp-callback-{ifname}", args=(sgate, ifname), daemon=True)
-                    callback_thread.start()
-                    sgate.wait()
-                
-                    self._callback_threads[ifname] = callback_thread
-                    self._presence_threads[ifname] = presence_thread
-
-                sgate.clear()
-                self._msearch_thread = threading.Thread(target=self._thread_entry_for_msearch, name="am-upnp-search", args=(sgate,), daemon=True)
-                self._msearch_thread.start()
-                sgate.wait()
-            finally:
-                self._lock.acquire()
-
         finally:
             self._lock.release()
+
+        # Perform thread startup operations outside the lock to avoid holding it too long
+        sgate = threading.Event()
+
+        dispatch_pool = LooperPool(Looper, "am-upnp-dispatch", min_loopers=5, max_loopers=10, highwater=5, daemon=True)
+        dispatch_pool.start_pool()
+
+        self._dispatch_pool = dispatch_pool
+
+        for ifname in self._presence_interfaces:
+
+            # We need a presence thread and callback thread for each interface we want to support
+            sgate.clear()
+            presence_thread = threading.Thread(target=self._thread_entry_for_presence, name=f"am-upnp-presence-{ifname}", args=(sgate, ifname), daemon=True)
+            presence_thread.start()
+            sgate.wait()
+
+                sgate.clear()
+                callback_thread = threading.Thread(target=self._thread_entry_for_callback, name=f"am-upnp-callback-{ifname}", args=(sgate, ifname), daemon=True)
+                callback_thread.start()
+                sgate.wait()
+            
+                self._callback_threads[ifname] = callback_thread
+                self._presence_threads[ifname] = presence_thread
+
+            sgate.clear()
+            self._msearch_thread = threading.Thread(target=self._thread_entry_for_msearch, name="am-upnp-search", args=(sgate,), daemon=True)
+            self._msearch_thread.start()
+            sgate.wait()
 
         return
 
@@ -1233,8 +1272,15 @@ class UpnpPresence:
                         headers_length = len(header_content) + len(HTTP1_1_END_OF_HEADER)
                         req_line, req_headers = parse_http_headers(header_content)
                         if "CONTENT-LENGTH" in req_headers:
-                            content_length = int(req_headers["CONTENT-LENGTH"])
-                            message_length = headers_length + content_length
+                            try:
+                                content_length = int(req_headers["CONTENT-LENGTH"])
+                                message_length = headers_length + content_length
+                            except (ValueError, TypeError) as ex:
+                                # Handle malformed Content-Length header gracefully
+                                logger.warning("Invalid Content-Length header value '%s': %s. Skipping content length parsing.", 
+                                             req_headers["CONTENT-LENGTH"], str(ex))
+                                content_length = None
+                                message_length = None
                 
                 if message_length is not None:
                     remaining_length = message_length - read_so_far
@@ -1249,7 +1295,11 @@ class UpnpPresence:
                 return
 
             req_body = request[headers_length:]
-            req_body = req_body.decode("utf-8")
+            try:
+                req_body = req_body.decode("utf-8")
+            except UnicodeDecodeError as e:
+                logger.error("Failed to decode callback request body as UTF-8 from %s: %s", svc_addr, e)
+                req_body = ""
 
             #TODO: Add package capture support for debugging callback requests
 

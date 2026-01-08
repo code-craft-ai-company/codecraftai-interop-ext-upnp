@@ -326,9 +326,21 @@ class DidlContainerPhotoAlbum(DidlObject):
             :returns: Instance of :class:`DidlContainerPhotoAlbum`.
         """
 
-        oid = obj_element.attrib["id"]
-        parent_id = obj_element.attrib["parentID"]
-        restricted = obj_element.attrib["restricted"]
+        # Read the Required attributes with proper error handling
+        try:
+            oid = obj_element.attrib["id"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlContainerPhotoAlbum is missing required attribute 'id'.")
+        
+        try:
+            parent_id = obj_element.attrib["parentID"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlContainerPhotoAlbum is missing required attribute 'parentID'.")
+        
+        try:
+            restricted = obj_element.attrib["restricted"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlContainerPhotoAlbum is missing required attribute 'restricted'.")
 
         # Read the Required elements
         e_title = obj_element.find("dc:title", namespaces=namespaces)
@@ -392,14 +404,26 @@ class DidlContainerStorageFolder(DidlObject):
             :returns: Instance of :class:`DidlContainerStorageFolder`.
         """
 
-        oid = obj_element.attrib["id"]
-        parent_id = obj_element.attrib["parentID"]
-        restricted = obj_element.attrib["restricted"]
+        # Read the Required attributes with proper error handling
+        try:
+            oid = obj_element.attrib["id"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlContainerStorageFolder is missing required attribute 'id'.")
+        
+        try:
+            parent_id = obj_element.attrib["parentID"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlContainerStorageFolder is missing required attribute 'parentID'.")
+        
+        try:
+            restricted = obj_element.attrib["restricted"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlContainerStorageFolder is missing required attribute 'restricted'.")
 
         # Read the Required elements
         e_title = obj_element.find("dc:title", namespaces=namespaces)
         if e_title is None:
-            errmsg = "DIDL message for DidlItemMusicTrack is missing a required element 'title'."
+            errmsg = "DIDL message for DidlContainerStorageFolder is missing a required element 'title'."
             raise ProtocolError(errmsg)
         title = e_title.text
 
@@ -511,7 +535,7 @@ class DidlItemMusicTrack(DidlObject):
         return
 
     @classmethod
-    def from_xml(self, obj_element: Element, namespaces: Optional[dict] = None):
+    def from_xml(cls, obj_element: Element, namespaces: Optional[dict] = None):
         """
             Create a :class:`DidlItemMusicTrack` from an XML element.
 
@@ -521,10 +545,21 @@ class DidlItemMusicTrack(DidlObject):
             :returns: Instance of :class:`DidlItemMusicTrack`.
         """
 
-        # Read the Required attributes
-        oid = obj_element.attrib["id"]
-        parent_id = obj_element.attrib["parentID"]
-        restricted = obj_element.attrib["restricted"]
+        # Read the Required attributes with proper error handling
+        try:
+            oid = obj_element.attrib["id"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlItemMusicTrack is missing required attribute 'id'.")
+        
+        try:
+            parent_id = obj_element.attrib["parentID"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlItemMusicTrack is missing required attribute 'parentID'.")
+        
+        try:
+            restricted = obj_element.attrib["restricted"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlItemMusicTrack is missing required attribute 'restricted'.")
 
         # Read the Required elements
         e_title = obj_element.find("dc:title", namespaces=namespaces)
@@ -533,9 +568,9 @@ class DidlItemMusicTrack(DidlObject):
             raise ProtocolError(errmsg)
         title = e_title.text
 
-        e_res = obj_element.find("", namespaces=namespaces)
+        e_res = obj_element.find("res", namespaces=namespaces)
         if e_res is None:
-            errmsg = "DIDL message for DidlItemMusicTrack is missing a required element 'title'."
+            errmsg = "DIDL message for DidlItemMusicTrack is missing a required element 'res'."
             raise ProtocolError(errmsg)
         res = DidlResource.from_xml(e_res)
 
@@ -555,6 +590,7 @@ class DidlItemMusicTrack(DidlObject):
             parent_id=parent_id,
             restricted=restricted,
             title=title,
+            res=res,
             creator=creator,
             album_art=album_art,
         )
@@ -665,7 +701,7 @@ class DidlLitePacket:
 
         attrs_str = ""
         for ak, av in self.xml_namespaces.items():
-            "{} {}='{}' ".format(attrs_str, ak, av)
+            attrs_str = "{} {}='{}' ".format(attrs_str, ak, av)
 
         xlines = ["<DIDL-Lite{}>".format(attrs_str)]
 
@@ -686,7 +722,7 @@ class DidlLitePacket:
 
         attrs_str = ""
         for ak, av in self.xml_namespaces.items():
-            "{} {}='{}' ".format(attrs_str, ak, av)
+            attrs_str = "{} {}='{}' ".format(attrs_str, ak, av)
 
         xparts = ["<DIDL-Lite{}>".format(attrs_str)]
 

@@ -23,6 +23,7 @@ from xml.etree.ElementTree import fromstring as parse_xml_content
 
 import requests
 
+from automojo.errors.raising import raise_for_http_status
 from automojo.interop.protocols.upnp.constants import UPNP_DEVICE1_NAMESPACE
 from automojo.interop.protocols.upnp.mapping.devicedetailmapper import DeviceDetailMapper
 
@@ -62,37 +63,39 @@ class DeviceQueryManager:
 
         try:
             resp: requests.Response = requests.get(query_url, timeout=2)
+            
+            # Use the established error handling pattern from the codebase
+            if resp.status_code != HTTPStatus.OK:
+                ctxmsg = f"Error querying device description from {query_url}"
+                raise_for_http_status(resp.status_code, resp.content, ctxmsg)
 
-            if resp.status_code == HTTPStatus.OK:
+            try:
+                default_namespaces = {"": UPNP_DEVICE1_NAMESPACE}
+                xml_content = resp.content.decode("utf-8")
+                root_el = parse_xml_content(xml_content)
+                
+                spec_ver, manufacturer = DeviceDetailMapper.read_spec_version_and_manufacturer(root_el, default_namespaces)
+                
+                if spec_ver is not None and manufacturer is not None:
 
-                try:
-                    default_namespaces = {"": UPNP_DEVICE1_NAMESPACE}
-                    xml_content = resp.content.decode("utf-8")
-                    root_el = parse_xml_content(xml_content)
+                    mapper = self._mapper_registry.lookup_device_detail_mapper_safe(manufacturer)
                     
-                    spec_ver, manufacturer = DeviceDetailMapper.read_spec_version_and_manufacturer(root_el, default_namespaces)
-                    
-                    if spec_ver is not None and manufacturer is not None:
+                    if mapper is not None:
+                        device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=query_url)
+                    else:
+                        # Log warning about unknown manufacturer but don't fail completely
+                        logger.warning(f"No device detail mapper found for manufacturer '{manufacturer}'. Device description parsing skipped.")
+                
+            except Exception as parse_err:
+                err_msg = f"Error parsing device description XML from {query_url}: {parse_err}"
+                logger.error(err_msg)
 
-                        mapper = self._mapper_registry.lookup_device_detail_mapper_safe(manufacturer)
-                        
-                        if mapper is not None:
-                            device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=query_url)
-                        else:
-                            # Log warning about unknown manufacturer but don't fail completely
-                            logger.warning(f"No device detail mapper found for manufacturer '{manufacturer}'. Device description parsing skipped.")
-                    
-                except Exception as parse_err:
-                    err_msg = f"Error parsing device description XML: {parse_err}"
-                    logger.error(err_msg)
-
-        except Exception as req_err:
-            err_msg_lines = [
-                f"Error querying device at {query_url}:"
-            ]
-            err_msg_lines.extend(f"{req_err}".splitlines(False))
-
-            err_msg = os.linesep.join(err_msg_lines)
+        except requests.exceptions.RequestException as req_err:
+            err_msg = f"Network error querying device at {query_url}: {req_err}"
+            logger.error(err_msg)
+        except Exception as general_err:
+            # This will catch HTTP errors raised by raise_for_http_status and other unexpected errors
+            err_msg = f"Error querying device description from {query_url}: {general_err}"
             logger.error(err_msg)
 
         return device_desc

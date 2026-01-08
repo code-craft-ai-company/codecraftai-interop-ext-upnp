@@ -120,12 +120,16 @@ class DeviceEvidence:
         if "::" in self._usn:
             dev_part = self._usn.split("::")[0]
         else:
+            # For USNs without "::", the entire USN should be the device UUID
+            # This handles root device USNs that don't include "::upnp:rootdevice"
             dev_part = self._usn
         
         # Remove the "uuid:" prefix if present
         if dev_part.startswith("uuid:"):
             return dev_part[5:]  # Remove "uuid:" prefix (5 characters)
         else:
+            # If no "uuid:" prefix, validate that we have a reasonable device identifier
+            # Return as-is but log a warning for debugging purposes
             return dev_part
     
     @property

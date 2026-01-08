@@ -49,8 +49,8 @@ class UpnpErrorCodes(Enum):
         An enumeration of the standard UPnP error codes
     """
     InvalidAction = 401
-    InvalidArgs = 402
-    Deprecated = 403
+    InvalidArguments = 402  # Changed from InvalidArgs to match standard
+    DeprecatedErrorCode = 403  # Changed from Deprecated to match standard
     ActionFailed = 501
     ArgumentValueInvalid = 600
     ArgumentValueOutOfRange = 601

@@ -120,6 +120,17 @@ class ServiceEvidence:
 
         return desc
 
+    def as_xml(self, indent="") -> str:
+        """
+            Convert the ServiceEvidence object to an XML string.
+            This method provides compatibility with the interface expected by device descriptions.
+
+            :param indent: Indentation for the XML string.
+
+            :returns: XML string representation of the ServiceEvidence object.
+        """
+        return self.to_xml(indent=indent)
+
     def __repr__(self):
         """
             Return debug representation for the service evidence.

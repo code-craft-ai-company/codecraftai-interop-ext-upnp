@@ -894,8 +894,15 @@ class UpnpCoordinator(CoordinatorBase):
                         headers_length = len(header_content) + len(HTTP1_1_END_OF_HEADER)
                         req_line, req_headers = http_parse_header(header_content)
                         if "CONTENT-LENGTH" in req_headers:
-                            content_length = int(req_headers["CONTENT-LENGTH"])
-                            message_length = headers_length + content_length
+                            try:
+                                content_length = int(req_headers["CONTENT-LENGTH"])
+                                message_length = headers_length + content_length
+                            except (ValueError, TypeError) as ex:
+                                # Handle malformed Content-Length header gracefully
+                                logger.warning("Invalid Content-Length header value '%s': %s. Skipping content length parsing.", 
+                                             req_headers["CONTENT-LENGTH"], str(ex))
+                                content_length = None
+                                message_length = None
                 
                 if message_length is not None:
                     remaining_length = message_length - read_so_far
@@ -925,7 +932,7 @@ class UpnpCoordinator(CoordinatorBase):
 
         if capture_to is not None:
             for cc in capture_to:
-                cc.append_capture(req_headers, req_body_bytes)
+                cc.append_capture(req_headers, req_body)
 
         if "SID" in req_headers:
             sid = req_headers["SID"]
@@ -1000,8 +1007,14 @@ class UpnpCoordinator(CoordinatorBase):
             req_headers[MSearchKeys.IP] = ip_addr
 
         if usn.find("::") > -1:
-            usn_device, usn_class = usn.split("::")
-            usn_device = usn_device.lstrip("uuid:")
+            usn_parts = usn.split("::")
+            if len(usn_parts) >= 2:
+                usn_device = usn_parts[0].lstrip("uuid:")
+                usn_class = usn_parts[1]
+            else:
+                # Malformed USN, log warning and skip processing
+                self.logger.warning("Malformed USN format '%s': expected at least 2 parts separated by '::'", usn)
+                return
 
             ifname = get_interface_for_ip(ip_addr)
 
@@ -1134,16 +1147,24 @@ class UpnpCoordinator(CoordinatorBase):
 
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-            # Bind to port zero so we can get an ephimeral port address
-            sock.bind((service_addr, 0))
+            try:
+                # Bind to port zero so we can get an ephimeral port address
+                sock.bind((service_addr, 0))
 
-            _, port = sock.getsockname()
-            host = get_ipv4_address(ifname)
+                _, port = sock.getsockname()
+                host = get_ipv4_address(ifname)
 
-            iface_callback_addr = "%s:%s" % (host, port)
+                iface_callback_addr = "%s:%s" % (host, port)
 
-            self._cl_iface_callback_addr_lookup[ifname] = iface_callback_addr
-            self._cl_callback_interface_sockets[ifname] = sock
+                self._cl_iface_callback_addr_lookup[ifname] = iface_callback_addr
+                self._cl_callback_interface_sockets[ifname] = sock
+            except Exception:
+                # Clean up socket on error to prevent resource leak
+                try:
+                    sock.close()
+                except Exception:
+                    pass  # Ignore errors during cleanup
+                raise
 
             # Set the start gate to allow the thread spinning us up to continue
             sgate.set()
@@ -1345,15 +1366,15 @@ class UpnpCoordinator(CoordinatorBase):
 
                     dev_extension = None
                     skip_device = False
+                    
+                    # Acquire the lock before we decide if the location exists in the children table
+                    self._coord_lock.acquire()
                     try:
-                        # Acquire the lock before we decide if the location exists in the children table
-                        self._coord_lock.acquire()
                         if location not in self._cl_children:
+                            # Unlock while we do some expensive stuff, we have already decided to
+                            # create the device
+                            self._coord_lock.release()
                             try:
-                                # Unlock while we do some expensive stuff, we have already decided to
-                                # create the device
-                                self._coord_lock.release()
-
                                 try:
                                     # We create the device
                                     dev_extension = self._create_root_device(manufacturer, modelNumber, modelDescription)

@@ -319,6 +319,7 @@ class UpnpServiceProxy(EventedVariableSink):
 
         elif aspects.action_pattern == ActionPattern.DO_WHILE_SUCCESS:
             completion_toctx.mark_begin()
+            retry_counter = 0
 
             while True:
 
@@ -356,6 +357,7 @@ class UpnpServiceProxy(EventedVariableSink):
                 elif not completion_toctx.should_continue():
                     completion_toctx.mark_final_attempt()
 
+                retry_counter += 1
                 time.sleep(completion_toctx.interval)
 
         elif aspects.action_pattern == ActionPattern.DO_UNTIL_CONNECTION_FAILURE:
@@ -631,9 +633,16 @@ class UpnpServiceProxy(EventedVariableSink):
                 else:
                     # Not a UPnP XML error, re-raise the original HTTP error
                     raise
-        except:
-            errmsg = traceback.format_exc()
-            print(errmsg)
+        except requests.exceptions.RequestException as req_ex:
+            # Handle network-related errors (timeouts, connection errors, etc.)
+            logger.error("Network error during UPnP action call: host=%s action=%s error=%s", 
+                        self._host, action_name, str(req_ex))
+            raise
+        except Exception as ex:
+            # Handle any other unexpected errors with proper logging
+            logger.error("Unexpected error during UPnP action call: host=%s action=%s error=%s", 
+                        self._host, action_name, str(ex))
+            logger.debug("Full traceback for UPnP action error:", exc_info=True)
             raise
 
         resp_content = resp.content.strip()

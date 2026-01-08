@@ -74,13 +74,19 @@ def device_description_load(location: str) -> Union[ElementTree, None]:
     """
     docTree = None
 
-    resp: requests.Response = requests.get(location)
-    if resp.status_code == 200:
-        xmlcontent = resp.content
+    try:
+        resp: requests.Response = requests.get(location, timeout=30)
+        try:
+            if resp.status_code == 200:
+                xmlcontent = resp.content
+                docTree = ElementTree(xml_fromstring(xmlcontent))
+        finally:
+            resp.close()  # Ensure response is properly closed
+    except (requests.RequestException, Exception) as ex:
+        # Log the error but return None to indicate failure
+        logger.debug("Failed to load device description from '%s': %s", location, str(ex))
 
-        docTree = ElementTree(xml_fromstring(xmlcontent))
-
-    return  docTree
+    return docTree
 
 def device_description_find_components(location: str, docTree: ElementTree, namespaces: dict = {"": UPNP_DEVICE1_NAMESPACE}) -> Tuple[Element, str, str, str, str, str]:
     """
@@ -93,10 +99,14 @@ def device_description_find_components(location: str, docTree: ElementTree, name
         :param namespaces: A dictionary of namespaces to use when processing the device description document.
 
         :returns: A tuple with the (device node, urlBase, manufacturer, modelName, modelNumber, modelDescription)
+        
+        :raises: ValueError if the device description is malformed or missing required elements.
     """
     # pylint: disable=dangerous-default-value
 
     devNode = docTree.find("device", namespaces=namespaces)
+    if devNode is None:
+        raise ValueError(f"Device description from '{location}' is missing required 'device' element")
 
     urlBase = None
     baseURLNode = devNode.find("URLBase", namespaces=namespaces)
@@ -108,7 +118,13 @@ def device_description_find_components(location: str, docTree: ElementTree, name
 
     # If urlBase was not set we need to try to use the schema and host as the urlBase
     if urlBase is None:
-        urlBase = "%s://%s" % (url_parts.scheme, host)
+        # Validate that we have the necessary components for a valid URL
+        if url_parts.scheme and host:
+            urlBase = "%s://%s" % (url_parts.scheme, host)
+        else:
+            # Fallback to the original location if we can't construct a proper base URL
+            logger.warning("Unable to construct URLBase from location '%s'. Using location as fallback.", location)
+            urlBase = location
 
     manufacturer = None
     modelName = None
@@ -356,9 +372,9 @@ class UpnpRootDevice(UpnpDeviceBase):
         return self._extid
 
     @property
-    def location(self) -> str:
+    def device_location(self) -> str:
         """
-            Returns the location URL where this device can be reached.
+            Returns the device location URL set during initialization.
         """
         return self._location
 
@@ -437,27 +453,28 @@ class UpnpRootDevice(UpnpDeviceBase):
         if len(service.SERVICE_EVENT_VARIABLES) > 0:
             service_type = service.SERVICE_TYPE
 
-            new_subscription = False
-            existing_sub_sid = None
-            existing_sub_expires = None
-            
             with self._device_lock:
-                if service_type not in self._subscriptions:
-                    new_subscription = True
-                else:
+                # Check if subscription already exists or is in progress
+                if service_type in self._subscriptions:
                     existing_sub_sid, existing_sub_expires = self._subscriptions[service_type]
-                    if existing_sub_sid is None and existing_sub_expires is None:
-                        new_subscription = True
+                    if existing_sub_sid is not None and existing_sub_expires is not None:
+                        # Check if existing subscription needs renewal
+                        check_time = datetime.now() + timedelta(seconds=TIMEDELTA_RENEWAL_WINDOW)
+                        if check_time <= existing_sub_expires and not renew:
+                            # Return existing valid subscription
+                            return existing_sub_sid, existing_sub_expires
+                
+                # Mark subscription as in progress to prevent race conditions
+                self._subscriptions[service_type] = (None, None)
 
-            # Check if existing subscription needs renewal
-            if not new_subscription and existing_sub_expires is not None:
-                check_time = datetime.now() + timedelta(seconds=TIMEDELTA_RENEWAL_WINDOW)
-                if check_time > existing_sub_expires:
-                    renew = True
-
-            if new_subscription or renew:
+            try:
                 svckey = service.get_extension_key()
                 target_service = self._services[svckey]
+
+                if self.URLBase is None:
+                    raise RuntimeError("URLBase is not set for device. Cannot construct subscription URL.")
+                if target_service.eventSubURL is None:
+                    raise RuntimeError(f"Service {svckey} has no eventSubURL. Cannot subscribe to events.")
 
                 subscribe_url = urljoin(self.URLBase, target_service.eventSubURL)
 
@@ -481,13 +498,16 @@ class UpnpRootDevice(UpnpDeviceBase):
                         self._sid_to_service_lookup[sub_sid] = target_service
                         self._subscriptions[service_type] = (sub_sid, sub_expires)
                     else:
-                        # Only remove from subscriptions if subscription failed
+                        # Remove the placeholder entry if subscription failed
                         if service_type in self._subscriptions:
                             del self._subscriptions[service_type]
-            else:
-                # Return existing subscription info if no new subscription was needed
-                sub_sid = existing_sub_sid
-                sub_expires = existing_sub_expires
+                            
+            except Exception:
+                # Clean up placeholder entry on any exception
+                with self._device_lock:
+                    if service_type in self._subscriptions:
+                        del self._subscriptions[service_type]
+                raise
 
         return sub_sid, sub_expires
 
@@ -518,6 +538,12 @@ class UpnpRootDevice(UpnpDeviceBase):
                 return
 
             host_ip = self._primary_route[MSearchRouteKeys.IP]
+            
+            if self.URLBase is None:
+                raise RuntimeError("URLBase is not set for device. Cannot construct subscription URL.")
+            if service.eventSubURL is None:
+                raise RuntimeError(f"Service {service.SERVICE_TYPE} has no eventSubURL. Cannot unsubscribe from events.")
+                
             subscribe_url = urljoin(self.URLBase, service.eventSubURL)
 
             custom_headers = self.get_custom_subscribe_headers()
@@ -745,10 +771,6 @@ class UpnpRootDevice(UpnpDeviceBase):
             self._auto_subscribe = True
             self.subscribe_to_all_services(factory)
             self._start_subscription_scheduler()
-        else:
-            self._auto_subscribe = False
-            self._stop_subscription_scheduler()
-            self._unsubscribe_all_services()subscription_scheduler()
         else:
             self._auto_subscribe = False
             self._stop_subscription_scheduler()
