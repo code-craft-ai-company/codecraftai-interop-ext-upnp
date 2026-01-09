@@ -345,12 +345,23 @@ class DidlContainerPhotoAlbum(DidlObject):
         # Read the Required elements
         e_title = obj_element.find("dc:title", namespaces=namespaces)
         if e_title is None:
-            errmsg = "DIDL message for DidlItemMusicTrack is missing a required element 'title'."
+            errmsg = "DIDL message for DidlContainerPhotoAlbum is missing a required element 'title'."
             raise ProtocolError(errmsg)
         title = e_title.text
 
-        obj = DidlContainerStorageFolder(
-            oid=oid, parent_id=parent_id, restricted=restricted
+        # Set default values for optional parameters
+        child_count = -1
+        storage_used = -1
+        write_status = DidlWriteStatus.UNKNOWN
+
+        obj = DidlContainerPhotoAlbum(
+            oid=oid,
+            parent_id=parent_id,
+            restricted=restricted,
+            title=title,
+            child_count=child_count,
+            storage_used=storage_used,
+            write_status=write_status,
         )
         return obj
 
@@ -672,13 +683,13 @@ class DidlLitePacket:
         "": "urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/",
     }
 
-    def __init__(self, objects: List[DidlObject] = []):
+    def __init__(self, objects: Optional[List[DidlObject]] = None):
         """
             Initialize a :class:`DidlLitePacket` instance.
 
             :param objects: Optional list of :class:`DidlObject` instances.
         """
-        self._objects = objects
+        self._objects = objects if objects is not None else []
         return
 
     @property

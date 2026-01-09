@@ -46,9 +46,11 @@ class DeviceClassGeneratorRegistry:
         generator_type: Type[UpnpDeviceClassGenerator]
 
         for generator_type in super_factory.iterate_override_types_for_each(UpnpFactoryProtocol.get_device_generator_types):
-            manufacturer_name = generator_type.get_manufacturer().upper()
-            if len(manufacturer_name) > 0 and manufacturer_name not in self._generators:
-                self._generators[manufacturer_name] = generator_type
+            manufacturer = generator_type.get_manufacturer()
+            if manufacturer is not None:
+                manufacturer_name = manufacturer.upper()
+                if len(manufacturer_name) > 0 and manufacturer_name not in self._generators:
+                    self._generators[manufacturer_name] = generator_type
 
         return
 

@@ -162,6 +162,6 @@ class BoseDeviceDetail(Basic1DeviceDesc):
             :returns: A unique path like string that is an identifier used to lookup a device type.
         """
         
-        extkey = f"{self._manufacturer}/{self._modelName}"
+        extkey = f"{self.manufacturer}/{self.modelName}"
         
         return extkey

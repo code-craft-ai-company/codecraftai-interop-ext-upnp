@@ -13,7 +13,7 @@ __credits__ = []
 
 from typing import List, Tuple, TYPE_CHECKING
 
-from automojo.errors.exceptions import SemanticError
+from automojo.errors.exceptions import SemanticError, ConfigurationError
 
 from automojo.thisapp.wellknown import ThisApplicationSingleton
 from automojo.thisapp.contextpaths import ContextPaths
@@ -89,7 +89,7 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
             This API is called so that the IntegrationCoupling can process configuration information.  The :class:`IntegrationCoupling`
             will verify that it has a valid environment and configuration to run in.
 
-            :raises :class:`akit.exceptions.AKitMissingConfigError`, :class:`akit.exceptions.AKitInvalidConfigError`:
+            :raises ConfigurationError: If UPnP device configuration is invalid.
         """
 
         cls.landscape = landscape
@@ -103,7 +103,7 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
                     if len(identifier) == 0:
                         identifier = dev_config.get("USN", "")
                         if len(identifier) == 0:
-                            raise ValueError("UPnP device configuration must provide either 'hint' or 'USN' identifier")
+                            raise ConfigurationError("UPnP device configuration must provide either 'hint' or 'USN' identifier")
 
                     cls.lookup_upnp_device_config[identifier] = dev_config
 
@@ -195,7 +195,7 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
                     if len(identifier) == 0:
                         identifier = dev_config.get("USN", "")
                         if len(identifier) == 0:
-                            raise ValueError("UPnP device configuration must provide either 'hint' or 'USN' identifier")
+                            raise ConfigurationError("UPnP device configuration must provide either 'hint' or 'USN' identifier")
 
                     cls.lookup_upnp_device[identifier] = dev
 

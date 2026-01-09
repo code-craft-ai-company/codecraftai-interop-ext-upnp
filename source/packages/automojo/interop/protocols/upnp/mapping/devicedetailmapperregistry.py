@@ -32,11 +32,11 @@ class DeviceDetailMapperRegistry:
 
         self._mappers: Dict[str, Type[DeviceDetailMapper]] = {}
 
-        self.initialize_mapper_table()
+        self._initialize_mapper_table()
         
         return
     
-    def initialize_mapper_table(self):
+    def _initialize_mapper_table(self):
         """
             Initializes the mapper table with the default device detail mappers.
         """
@@ -46,9 +46,11 @@ class DeviceDetailMapperRegistry:
         mapper_type: Type[DeviceDetailMapper]
 
         for mapper_type in super_factory.iterate_override_types_for_each(UpnpFactoryProtocol.get_device_detail_mapper_types):
-            manufacturer_name = mapper_type.get_manufacturer().upper()
-            if len(manufacturer_name) > 0 and manufacturer_name not in self._mappers:
-                self._mappers[manufacturer_name] = mapper_type
+            manufacturer = mapper_type.get_manufacturer()
+            if manufacturer is not None:
+                manufacturer_name = manufacturer.upper()
+                if len(manufacturer_name) > 0 and manufacturer_name not in self._mappers:
+                    self._mappers[manufacturer_name] = mapper_type
 
         return
 

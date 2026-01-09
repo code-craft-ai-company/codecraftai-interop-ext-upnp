@@ -2,6 +2,7 @@
 from typing import List
 
 import os
+import sys
 
 import click
 
@@ -41,12 +42,18 @@ def command_am_interop_upnp_scan(window_length: float, factory_modules: List[str
     disco_window.wait()
 
     device_scan_directory = os.path.join(AM_RUNTIME_VARIABLES.AM_PRESENCE_DIRECTORY, "scan", "upnp", "devices")
-    if not os.path.exists(device_scan_directory):
-        os.makedirs(device_scan_directory)
+    try:
+        os.makedirs(device_scan_directory, exist_ok=True)
+    except OSError as ex:
+        print(f"ERROR: Failed to create device scan directory '{device_scan_directory}': {ex}")
+        sys.exit(1)
     
     service_scan_directory = os.path.join(AM_RUNTIME_VARIABLES.AM_PRESENCE_DIRECTORY, "scan", "upnp", "services")
-    if not os.path.exists(service_scan_directory):
-        os.makedirs(service_scan_directory)
+    try:
+        os.makedirs(service_scan_directory, exist_ok=True)
+    except OSError as ex:
+        print(f"ERROR: Failed to create service scan directory '{service_scan_directory}': {ex}")
+        sys.exit(1)
 
     print("")
     print("------------ PROCESSING DEVICES AND SERVICES -------------")

@@ -26,7 +26,7 @@ class BoseUpnpExtensionProtocol(UpnpFactoryProtocol, FactoryExtension):
     """
 
     @classmethod
-    def get_device_detail_mapper_types(self) -> List[Type[DeviceDetailMapper]]:
+    def get_device_detail_mapper_types(cls) -> List[Type[DeviceDetailMapper]]:
         """
             Returns a list of device detail mappers that are registered with this
             extension protocol.

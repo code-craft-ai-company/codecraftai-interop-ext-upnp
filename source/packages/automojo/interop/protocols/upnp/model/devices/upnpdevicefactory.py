@@ -180,16 +180,41 @@ class UpnpDeviceFactory:
             serviceClass = self._std_service_registry[extkey]
         
         if serviceClass is not None:
+            temp_service_inst = None
             try:
-                serviceInst = serviceClass()
-                # Properly link the service to its parent device
-                serviceInst._proxy_link_service_to_device(device_ref, service_desc)
+                # Create the service instance
+                temp_service_inst = serviceClass()
+                
+                # Link the service to its parent device - this must succeed for the service to be usable
+                temp_service_inst._proxy_link_service_to_device(device_ref, service_desc)
+                
+                # Only assign to return variable if both creation and linking succeeded
+                serviceInst = temp_service_inst
+                
             except Exception as ex:
-                # Log the error but return None to indicate service creation failed
+                # Log the error with full context and ensure we return None to indicate service creation failed
                 # This prevents partial service instances from being returned
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(
+                    "Failed to create service instance for extension key '%s': %s", 
+                    extkey, str(ex), exc_info=True
+                )
+                
+                # Properly clean up the partially created service instance if it exists
+                if temp_service_inst is not None:
+                    try:
+                        # Attempt to clean up any resources that may have been initialized
+                        if hasattr(temp_service_inst, 'invalidate_subscription'):
+                            temp_service_inst.invalidate_subscription()
+                    except Exception as cleanup_ex:
+                        logger.warning(
+                            "Failed to clean up partially created service instance: %s", 
+                            str(cleanup_ex)
+                        )
+                
+                # Ensure we return None to indicate failure
                 serviceInst = None
-                # Re-raise the exception to allow caller to handle it appropriately
-                raise
 
         return serviceInst
 

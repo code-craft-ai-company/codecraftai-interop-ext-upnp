@@ -469,6 +469,8 @@ class UpnpRootDevice(UpnpDeviceBase):
 
             try:
                 svckey = service.get_extension_key()
+                if svckey not in self._services:
+                    raise RuntimeError(f"Service with key '{svckey}' is not available on this device. Cannot subscribe to events.")
                 target_service = self._services[svckey]
 
                 if self.URLBase is None:
@@ -482,7 +484,11 @@ class UpnpRootDevice(UpnpDeviceBase):
                 if presence is None:
                     raise RuntimeError("Presence reference was lost.")
 
-                host_ip = self._primary_route[MSearchRouteKeys.IP]
+                # Get host IP from primary route, fallback to device IP address
+                if self._primary_route is not None and MSearchRouteKeys.IP in self._primary_route:
+                    host_ip = self._primary_route[MSearchRouteKeys.IP]
+                else:
+                    host_ip = self.IPAddress
 
                 custom_headers = self.get_custom_subscribe_headers()
                 sub_sid, sub_expires = presence.service_subscribe(
@@ -497,6 +503,8 @@ class UpnpRootDevice(UpnpDeviceBase):
                     if sub_sid is not None:
                         self._sid_to_service_lookup[sub_sid] = target_service
                         self._subscriptions[service_type] = (sub_sid, sub_expires)
+                        # Register the subscription with the coordinator for proper callback routing
+                        self._register_subscription_mapping(sub_sid)
                     else:
                         # Remove the placeholder entry if subscription failed
                         if service_type in self._subscriptions:
@@ -537,14 +545,18 @@ class UpnpRootDevice(UpnpDeviceBase):
                         self._subscriptions[svc_type] = (None, None)
                 return
 
-            host_ip = self._primary_route[MSearchRouteKeys.IP]
+            # Get host IP from primary route, fallback to device IP address
+            if self._primary_route is not None and MSearchRouteKeys.IP in self._primary_route:
+                host_ip = self._primary_route[MSearchRouteKeys.IP]
+            else:
+                host_ip = self.IPAddress
             
             if self.URLBase is None:
                 raise RuntimeError("URLBase is not set for device. Cannot construct subscription URL.")
             if service.eventSubURL is None:
                 raise RuntimeError(f"Service {service.SERVICE_TYPE} has no eventSubURL. Cannot unsubscribe from events.")
                 
-            subscribe_url = urljoin(self.URLBase, service.eventSubURL)
+            subscribe_url = urljoin(self.URLBase.rstrip("/") + "/", service.eventSubURL)
 
             custom_headers = self.get_custom_subscribe_headers()
             presence.service_unsubscribe(host_ip, subscribe_url, subscription_id, custom_headers=custom_headers)
@@ -1029,6 +1041,10 @@ class UpnpRootDevice(UpnpDeviceBase):
 
             NOTE: This method should be called with the device lock held.
         """
+        # Verify that the device lock is held by the calling thread
+        if not self._device_lock._is_owned():
+            raise RuntimeError("_locked_populate_embedded_devices() must be called with device lock held")
+            
         for deviceInfo in description.deviceList:
 
             devkey = deviceInfo.get_extension_key()
@@ -1052,9 +1068,16 @@ class UpnpRootDevice(UpnpDeviceBase):
 
             NOTE: This method should be called with the device lock held.
         """
+        # Verify that the device lock is held by the calling thread
+        if not self._device_lock._is_owned():
+            raise RuntimeError("_locked_process_urlbase_node() must be called with device lock held")
+            
         # pylint: disable=unused-argument
 
-        self._urlBase = urlBaseNode.text.rstrip("/")
+        if urlBaseNode.text is not None:
+            self._urlBase = urlBaseNode.text.rstrip("/")
+        else:
+            self._urlBase = ""
         return
 
     def _matches_model_name(self, modelName: str) -> bool:
@@ -1086,5 +1109,6 @@ class UpnpRootDevice(UpnpDeviceBase):
         """
             Returns a brief description of the device as a string.
         """
-        rtnstr = "%s: USN:%s IP=%s" % (self.modelName, self.USN, self.IPAddress)
+        model_name = self.modelName if self.modelName is not None else "<unknown>"
+        rtnstr = "%s: USN:%s IP=%s" % (model_name, self.USN, self.IPAddress)
         return rtnstr

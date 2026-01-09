@@ -220,16 +220,21 @@ class UpnpSearchWindow:
             if checking_for is not None:
                 matched_hints = []
                 matched_devices = {}
+                used_devices = set()  # Track devices that have already been matched
                 
                 for nxt_hint in checking_for:
-                    hint_matched = False
-                    for device in current_found.values():
+                    # Look for the first device that matches this hint
+                    for device_id, device in current_found.items():
+                        # Skip devices that have already been matched to other hints
+                        if device_id in used_devices:
+                            continue
+                            
                         if nxt_hint.matches(device):
                             # Store the matched device for later atomic update
-                            hint_matched = True
                             matched_hints.append(nxt_hint)
                             matched_devices[nxt_hint.get_hint()] = device
-                            break
+                            used_devices.add(device_id)  # Mark this device as used
+                            break  # Found a match for this hint, move to next hint
 
                 # Update shared state atomically
                 with self._lock:

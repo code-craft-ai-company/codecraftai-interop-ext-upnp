@@ -97,17 +97,18 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
         for child_el in device_el.iterfind("./bose:*", namespaces=BOSE_XML_NAMESPACES):
             full_tag = child_el.tag
             tag = full_tag[BOSE_NAMESPACE_PREFIX_END:]
+            txtval = child_el.text
 
             if tag == "X_MAC":
-                params['mac_addr'] = child_el.text
+                params['mac_addr'] = txtval if txtval is not None else ""
             elif tag == "X_ecoSystem":
-                params['generation'] = child_el.text
+                params['generation'] = txtval if txtval is not None else ""
             elif tag == "X_productType":
-                params['codename'] = child_el.text
+                params['codename'] = txtval if txtval is not None else ""
             elif tag == "X_productColor":
-                params['color'] = child_el.text
+                params['color'] = txtval if txtval is not None else ""
             elif tag == "X_softwareVersion":
-                params['software_version'] = child_el.text
+                params['software_version'] = txtval if txtval is not None else ""
             elif tag == "X_multiroomVersions":
                 params['multi_room'] = BoseDeviceDetailMapper.process_device_multiroom_versions(child_el, all_namespaces)
         
@@ -115,7 +116,7 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
             device = BoseDeviceDetail(specVersion=specVersion, locationURL=locationURL, **params)
         except Exception as err:
             err_msg = f"Error creating Bose device description: {err}"
-            raise
+            raise RuntimeError(err_msg) from err
 
         return device
 
@@ -151,25 +152,26 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
         for child_el in device_el.iterfind("./bose:*", namespaces=BOSE_XML_NAMESPACES):            
             full_tag = child_el.tag
             tag = full_tag[BOSE_NAMESPACE_PREFIX_END:]
+            txtval = child_el.text
 
             if tag == "X_MAC":
-                params['mac_addr'] = child_el.text
+                params['mac_addr'] = txtval if txtval is not None else ""
             elif tag == "X_ecoSystem":
-                params['generation'] = child_el.text
+                params['generation'] = txtval if txtval is not None else ""
             elif tag == "X_productType":
-                params['codename'] = child_el.text
+                params['codename'] = txtval if txtval is not None else ""
             elif tag == "X_productColor":
-                params['color'] = child_el.text
+                params['color'] = txtval if txtval is not None else ""
             elif tag == "X_softwareVersion":
-                params['software_version'] = child_el.text
+                params['software_version'] = txtval if txtval is not None else ""
             elif tag == "X_multiroomVersions":
                 params['multi_room'] = BoseDeviceDetailMapper.process_device_multiroom_versions(child_el, all_namespaces)
 
         try:
             device = BoseEmbeddedDeviceDetail(specVersion=specVersion, locationURL=None, **params)
         except Exception as err:
-            err_msg = f"Error creating Bose device description: {err}"
-            raise
+            err_msg = f"Error creating Bose embedded device description: {err}"
+            raise RuntimeError(err_msg) from err
 
         return device
 
@@ -202,11 +204,11 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
         
         next_ver_el = multiroom_el.find("./ClockSync_Protocol_Version", namespaces=namespaces)
         if next_ver_el is not None:
-            audio_payload_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
+            clock_sync_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
         
         next_ver_el = multiroom_el.find("./Audio_Payload_Version", namespaces=namespaces)
         if next_ver_el is not None:
-            clock_sync_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
+            audio_payload_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
 
         next_ver_el = multiroom_el.find("./NowPlaying_Version", namespaces=namespaces)
         if next_ver_el is not None:

@@ -39,8 +39,9 @@ class UpnpEmbeddedDevice(UpnpDeviceBase):
         # with the embedded device description. Since we don't have evidence at construction time,
         # we'll initialize manually and set evidence later via update_description.
         
-        # Call object.__init__ directly to avoid UpnpDeviceBase's device_detail requirement
-        super(UpnpDeviceBase, self).__init__()
+        # Call parent constructor first with None device_detail since embedded devices
+        # inherit evidence from their parent device
+        super().__init__(device_detail=None)
         
         # Initialize core attributes
         self._device_detail = None  # Will be set when evidence is available
@@ -65,18 +66,18 @@ class UpnpEmbeddedDevice(UpnpDeviceBase):
         self._urlBase = None
         self._device_lock = threading.RLock()
         self._embedded_devices = {}
-        self._services_descriptions = {}
         self._services = {}
         
         # Initialize service and device description tables like UpnpDeviceBase does
-        self._service_descriptions = {}
+        # Clear any existing entries from parent and populate with embedded device data
+        self._service_descriptions.clear()
         serviceList = embedded_device_desc.serviceList
         if serviceList is not None:
             for serviceInfo in serviceList:
                 svckey = serviceInfo.get_extension_key()
                 self._service_descriptions[svckey] = serviceInfo
 
-        self._embedded_device_descriptions = {}
+        self._embedded_device_descriptions.clear()
         deviceList = embedded_device_desc.deviceList
         if deviceList is not None:
             for deviceInfo in deviceList:

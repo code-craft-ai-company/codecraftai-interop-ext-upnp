@@ -222,7 +222,7 @@ class UpnpDeviceBase:
                 if extra_headers is not None:
                     headers.update(extra_headers)
 
-                resp: requests.Response = requests.get(fullurl, headers=headers)
+                resp: requests.Response = requests.get(fullurl, headers=headers, timeout=30)
                 if resp.status_code == 200:
                     svc_content = resp.text
                     svc_desc = ServiceDesc.process_service_description(svc_content)
@@ -250,23 +250,35 @@ class UpnpDeviceBase:
             elif factory is not None and service_key in self._service_descriptions:
                 svc_desc = self._service_descriptions[service_key]
 
-                # Release lock during service creation to avoid potential deadlocks
-                self._device_lock.release()
-                try:
+                # Check again if another thread created the service while we were waiting
+                if service_key in self._services:
+                    svc = self._services[service_key]
+                else:
+                    # Create device reference while lock is held to ensure consistency
                     device_ref = weakref.ref(self)
-                    svc = factory.create_service_instance(svc_desc, device_ref)
-                finally:
-                    self._device_lock.acquire()
+                    # Release lock during service creation to avoid potential deadlocks
+                    self._device_lock.release()
+                    try:
+                        temp_svc = factory.create_service_instance(svc_desc, device_ref)
+                    finally:
+                        self._device_lock.acquire()
 
-                # Now that we have the lock again, safely update the services
-                if svc is not None:
-                    self._services[service_key] = svc
+                    # Double-check pattern: verify the service wasn't created by another thread
+                    # while we were creating our instance
+                    if service_key in self._services:
+                        # Another thread beat us to it, use their instance
+                        svc = self._services[service_key]
+                        # Our temp_svc will be garbage collected automatically
+                    elif temp_svc is not None:
+                        # We successfully created the service, store it
+                        self._services[service_key] = temp_svc
+                        svc = temp_svc
         finally:
             self._device_lock.release()
 
         if svc is None and not allow_none:
             errmsg = "The service service_key={} was not found or is not available.".format(service_key)
-            raise UpnpServiceNotAvailableError(errmsg)
+            raise UpnpServiceNotAvailableError(501, errmsg)
 
         return svc
 

@@ -138,11 +138,12 @@ class UpnpServiceProxy(EventedVariableSink):
         return self._controlURL
 
     @property
-    def device(self) -> "UpnpDeviceBase":
+    def device(self) -> Optional["UpnpDeviceBase"]:
         """
-            Returns a reference to the parent device of this service.
+            Returns a reference to the parent device of this service, or None if the device
+            has been garbage collected.
         """
-        return self._device_ref()
+        return self._device_ref() if self._device_ref is not None else None
 
     @property
     def eventSubURL(self) -> str:
@@ -179,7 +180,7 @@ class UpnpServiceProxy(EventedVariableSink):
         """
         return self._serviceType
 
-    def call_action(self, action_name: str, arguments: dict = {}, auth: dict = None, headers: dict = {}, aspects: AspectsUPnP=DEFAULT_UPNP_CALL_ASPECTS):
+    def call_action(self, action_name: str, arguments: Optional[dict] = None, auth: Optional[dict] = None, headers: Optional[dict] = None, aspects: AspectsUPnP=DEFAULT_UPNP_CALL_ASPECTS):
         """
             Method utilize to make direct calls on a service for action APIs that are not published in a service description.
             
@@ -209,6 +210,7 @@ class UpnpServiceProxy(EventedVariableSink):
         elif aspects.action_pattern == ActionPattern.SINGLE_CONNECTED_CALL:
             completion_toctx.mark_begin()
             retry_counter = 0
+            max_retries = 1000  # Safety limit to prevent infinite loops
 
             while True:
 
@@ -239,6 +241,11 @@ class UpnpServiceProxy(EventedVariableSink):
                         err_msg_lines.extend(format_exc_lines())
                         err_msg = os.linesep.join(err_msg_lines)
                         logger.error(err_msg)
+
+                # Safety check to prevent infinite loops
+                if retry_counter >= max_retries:
+                    logger.error("Maximum retry limit (%d) exceeded for action '%s', aborting", max_retries, action_name)
+                    raise RuntimeError(f"Maximum retry limit ({max_retries}) exceeded for action '{action_name}'")
 
                 # Only reach here for non-UPnP exceptions that should be retried
                 if completion_toctx.final_attempt:
@@ -581,7 +588,7 @@ class UpnpServiceProxy(EventedVariableSink):
         self._serviceType = serviceType
         return
 
-    def _proxy_call_action(self, action_name: str, arguments: dict = {}, auth: Optional[dict] = None, headers: dict = {}, aspects: AspectsUPnP=DEFAULT_UPNP_ASPECTS) -> dict:
+    def _proxy_call_action(self, action_name: str, arguments: Optional[dict] = None, auth: Optional[dict] = None, headers: Optional[dict] = None, aspects: AspectsUPnP=DEFAULT_UPNP_ASPECTS) -> dict:
         """
             Helper method utilize by derived service proxies to make calls on remote service actions.
             
@@ -593,10 +600,19 @@ class UpnpServiceProxy(EventedVariableSink):
             :returns: Returns a dictionary which contains the returned response data.
         """
         # pylint: disable=dangerous-default-value
+        
+        # Handle None default arguments
+        if arguments is None:
+            arguments = {}
+        if headers is None:
+            headers = {}
 
         call_url = self.controlURL
         if self._baseURL is not None:
-            call_url = self._baseURL + call_url
+            # Properly construct URL by ensuring single separator
+            base_url = self._baseURL.rstrip('/')
+            control_url = call_url.lstrip('/')
+            call_url = f"{base_url}/{control_url}"
 
         call_body = self._soap_processor.create_request(action_name, arguments, typed=self.serviceType)
 
@@ -608,6 +624,8 @@ class UpnpServiceProxy(EventedVariableSink):
         call_headers.update(headers)
 
         resp: requests.Response = None
+        resp_content = None
+        status_code = None
         try:
             resp = requests.post(
                 call_url,
@@ -617,8 +635,13 @@ class UpnpServiceProxy(EventedVariableSink):
                 auth=auth
             )
             resp.raise_for_status()
+            # Extract all needed data before closing the response
+            resp_content = resp.content.strip()
+            status_code = resp.status_code
         except requests.exceptions.HTTPError:
             if resp is not None:
+                # Extract status code before any potential response closure
+                status_code = resp.status_code
                 # If the body of the error response contains XML then it should be a UPnP error,
                 # extract the UPnP error information and raise a UpnpError
                 content_type = resp.headers.get("content-type", "").lower()
@@ -644,12 +667,13 @@ class UpnpServiceProxy(EventedVariableSink):
                         self._host, action_name, str(ex))
             logger.debug("Full traceback for UPnP action error:", exc_info=True)
             raise
-
-        resp_content = resp.content.strip()
+        finally:
+            # Ensure the response is properly closed to free up the connection
+            if resp is not None:
+                resp.close()
 
         resp_dict = None
 
-        status_code = resp.status_code
         if status_code >= 200 and status_code < 300: # pylint: disable=chained-comparison
             resp_dict = self._soap_processor.parse_response(action_name, resp_content, typed=self.serviceType)
         else:
@@ -674,6 +698,9 @@ class UpnpServiceProxy(EventedVariableSink):
 
             for propNodeOuter in propertyNodeList:
                 # Get the first node of the outer property node
+                if len(propNodeOuter) == 0:
+                    # Skip empty property nodes
+                    continue
                 propNode = propNodeOuter[0]
 
                 event_name = propNode.tag

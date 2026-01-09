@@ -83,7 +83,13 @@ class DeviceDetailMapper:
             spec_ver = cls.process_spec_version(spec_ver_el, namespaces=namespaces)
 
             device_el = root_el.find("device", namespaces=namespaces)
+            if device_el is None:
+                raise ValueError("Device description missing required 'device' element")
+                
             manufacturer_el = device_el.find("manufacturer", namespaces=namespaces)
+            if manufacturer_el is None:
+                raise ValueError("Device description missing required 'manufacturer' element")
+                
             manufacturer = manufacturer_el.text
 
         except Exception as err:
@@ -172,7 +178,8 @@ class DeviceDetailMapper:
 
                 val = None
                 if tag == "manufacturer":
-                    val = child_el.text.upper()  # Store uppercase manufacturer directly
+                    mftext = child_el.text
+                    val = mftext.upper() if mftext is not None else ""
                 elif tag == "iconList":
                     val = cls._process_icons_list(child_el, namespaces=namespaces)
                 elif tag == 'deviceList':
@@ -182,7 +189,7 @@ class DeviceDetailMapper:
                 else:
                     val = child_el.text
                 
-                if val != None:
+                if val is not None:
                     params[tag] = val
 
                 if tag in required_elements:

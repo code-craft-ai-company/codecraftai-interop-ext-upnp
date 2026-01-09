@@ -15,10 +15,28 @@ __credits__ = []
 import enum
 import re
 
-from xml.etree.ElementTree import Element, SubElement, QName, ParseError
+from xml.etree.ElementTree import Element, SubElement, QName, ParseError, XMLParser
 from xml.etree.ElementTree import tostring as xml_tostring
-from xml.etree.ElementTree import fromstring as xml_fromstring
+from xml.etree.ElementTree import fromstring as xml_fromstring_unsafe
 from xml.etree.ElementTree import register_namespace
+
+# Create a secure XML parser that prevents XXE attacks
+def xml_fromstring(data):
+    """
+        Secure XML parsing function that prevents XXE and other XML-based attacks.
+        
+        :param data: XML data to parse (bytes or string)
+        :returns: Parsed XML Element
+        :raises: ParseError if XML is malformed
+    """
+    # Create parser with security features disabled
+    parser = XMLParser()
+    # Disable external entity processing to prevent XXE attacks
+    parser.parser.DefaultHandler = lambda data: None
+    parser.parser.ExternalEntityRefHandler = lambda context, base, sysId, notationName: False
+    parser.parser.EntityDeclHandler = lambda entityName, is_parameter_entity, value, base, systemId, publicId, notationName: False
+    
+    return xml_fromstring_unsafe(data, parser)
 
 from automojo.xmodules.xconvert import safe_as_str
 
@@ -65,8 +83,13 @@ def remove_extraneous_xml_declarations(xml_str):
     """
     xml_declaration = ''
     if xml_str.startswith('<?xml'):
-        xml_declaration, xml_str = xml_str.split('?>', maxsplit=1)
-    xml_declaration += '?>'
+        parts = xml_str.split('?>', maxsplit=1)
+        if len(parts) == 2:
+            xml_declaration, xml_str = parts
+            xml_declaration += '?>'
+        else:
+            # Malformed XML declaration without closing ?>, treat entire string as content
+            xml_str = xml_str
     xml_str = re.sub(r'<\?xml.*?\?>', '', xml_str, flags=re.I)
     return xml_declaration + xml_str
 
@@ -122,10 +145,20 @@ class SoapProcessor:
                     arg_val = arg_val.value
 
                 py_type = type(arg_val)
-                soap_type = PYTHON_TO_SOAP_TYPE_MAP[py_type]
+                
+                # Handle None values explicitly
+                if arg_val is None:
+                    soap_type = 'xsd:string'
+                    arg_val = ""
+                else:
+                    # Get SOAP type with fallback to string for unsupported types
+                    soap_type = PYTHON_TO_SOAP_TYPE_MAP.get(py_type, 'xsd:string')
 
                 if soap_type == 'xsd:string':
-                    arg_val = arg_val # pylint: disable=self-assigning-variable
+                    # Convert unsupported types to string representation
+                    if py_type not in PYTHON_TO_SOAP_TYPE_MAP:
+                        arg_val = str(arg_val)
+                    # else: arg_val is already a string, no conversion needed
                 elif soap_type == 'xsd:int' or soap_type == 'xsd:float':
                     arg_val = str(arg_val)
                 elif soap_type == 'xsd:boolean':
@@ -176,11 +209,20 @@ class SoapProcessor:
 
         if arguments:
             for arg_name, arg_val in arguments.items():
-                py_type = type(arg_val)
-                soap_type = PYTHON_TO_SOAP_TYPE_MAP[py_type]
+                # Handle None values explicitly
+                if arg_val is None:
+                    soap_type = 'xsd:string'
+                    arg_val = ""
+                else:
+                    py_type = type(arg_val)
+                    # Get SOAP type with fallback to string for unsupported types
+                    soap_type = PYTHON_TO_SOAP_TYPE_MAP.get(py_type, 'xsd:string')
 
                 if soap_type == 'xsd:string':
-                    arg_val = arg_val # pylint: disable=self-assigning-variable
+                    # Convert unsupported types to string representation
+                    if arg_val is not None and type(arg_val) not in PYTHON_TO_SOAP_TYPE_MAP:
+                        arg_val = str(arg_val)
+                    # else: arg_val is already a string, no conversion needed
                 elif soap_type == 'xsd:int' or soap_type == 'xsd:float':
                     arg_val = str(arg_val)
                 elif soap_type == 'xsd:boolean':
@@ -230,12 +272,16 @@ class SoapProcessor:
         if typed:
             resp_body = docNode.find(".//{%s}%sResponse" % (typed, action_name))
         else:
-            resp_body = docNode.find(".//%sResponse" % action_name)
+            resp_body = docNode.find(".//%sResponse" % (action_name,))
 
         if resp_body is None:
             msg = ('Returned XML did not include an element which matches namespace %r and tag name'
                    ' \'%sResponse\'.' % (typed, action_name))
-            print(msg + '\n' + xml_tostring(docNode, short_empty_elements=False).decode('utf8'))
+            try:
+                xml_debug = xml_tostring(docNode, short_empty_elements=False).decode('utf-8')
+            except UnicodeDecodeError:
+                xml_debug = xml_tostring(docNode, short_empty_elements=False).decode('utf-8', errors='replace')
+            print(msg + '\n' + xml_debug)
             raise SOAPProtocolError(msg)
 
         # Sometimes devices return XML strings as their argument values without escaping them with
@@ -296,7 +342,11 @@ class SoapProcessor:
         if resp_body is None:
             msg = ('Returned XML did not include a SOAP Fault element. Tried SOAP envelope namespace (%r), '
                    'no namespace, and service namespace (%r).' % (NS_SOAP_ENV, typed))
-            print(msg + '\n' + xml_tostring(docNode, short_empty_elements=False).decode('utf8'))
+            try:
+                xml_debug = xml_tostring(docNode, short_empty_elements=False).decode('utf-8')
+            except UnicodeDecodeError:
+                xml_debug = xml_tostring(docNode, short_empty_elements=False).decode('utf-8', errors='replace')
+            print(msg + '\n' + xml_debug)
             raise SOAPProtocolError(msg)
 
         # Lets try to extract the XML response error information
@@ -329,12 +379,17 @@ class SoapProcessor:
                 errorCodeNode = upnpErrorNode.find(".//errorCode")
             if errorCodeNode is None or errorCodeNode.text is None:
                 raise SOAPProtocolError("UPnPError missing required 'errorCode' element")
-            errorCode = int(errorCodeNode.text)
+            try:
+                errorCode = int(errorCodeNode.text)
+            except ValueError:
+                raise SOAPProtocolError(f"UPnPError has invalid 'errorCode' value: '{errorCodeNode.text}'")
             
             # Try multiple approaches to find errorDescription for non-compliant devices
             errorDescriptionNode = upnpErrorNode.find(".//{%s}errorDescription" % NS_UPNP_CONTROL)
             if errorDescriptionNode is None:
                 errorDescriptionNode = upnpErrorNode.find(".//errorDescription")
+            
+            # Use provided errorDescription if available, otherwise use lookup table fallback
             if errorDescriptionNode is not None and errorDescriptionNode.text is not None:
                 errorDescription = errorDescriptionNode.text
             else:
@@ -343,10 +398,6 @@ class SoapProcessor:
         except SOAPProtocolError:
             # Re-raise SOAP protocol errors as-is
             raise
-        except ValueError as ve:
-            # Handle int conversion errors specifically
-            errmsg = "Invalid errorCode value in UPnP error response: %s" % str(ve)
-            raise SOAPProtocolError(errmsg) from ve
         except Exception as xcpt:
             errmsg = "Unable to process xml response: status=%r\n%s" % (status_code, content)
             if extra is not None:

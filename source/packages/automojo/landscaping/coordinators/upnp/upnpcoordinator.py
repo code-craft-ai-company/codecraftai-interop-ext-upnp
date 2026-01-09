@@ -89,13 +89,32 @@ def http_parse_header(header_content):
     header_lines = header_content.splitlines(False)
 
     assert len(header_lines) > 0, "The header content was not a valid HTTP request header."
-    req_line = header_lines[0]
+    
+    # Validate that the first line is not empty
+    if not header_lines[0]:
+        raise ValueError("HTTP request line cannot be empty")
+    
+    # Decode request line to maintain consistent string types in return value
+    try:
+        req_line = header_lines[0].decode('utf-8').strip()
+    except UnicodeDecodeError:
+        # Fallback for malformed request line
+        req_line = header_lines[0].decode('utf-8', errors='replace').strip()
+    
+    # Validate that the decoded request line is not empty
+    if not req_line:
+        raise ValueError("HTTP request line cannot be empty after decoding")
+    
     for hline in header_lines[1:]:
         name_end = hline.find(b":")
         if name_end > -1:
-            hname = hline[:name_end].upper().decode().strip()
-            hval = hline[name_end + 1:].decode().strip()
-            headers[hname] = hval
+            try:
+                hname = hline[:name_end].upper().decode('utf-8').strip()
+                hval = hline[name_end + 1:].decode('utf-8').strip()
+                headers[hname] = hval
+            except UnicodeDecodeError:
+                # Skip malformed headers that can't be decoded as UTF-8
+                continue
     return req_line, headers
 
 
@@ -626,9 +645,10 @@ class UpnpCoordinator(CoordinatorBase):
 
             :param usn: The USN of the device to wake.
             :param dev_hint: Additional hint information about the device.
+            
+            :raises: NotImplementedError indicating this functionality is not yet implemented.
         """
-        self.logger.info("TODO: Implement an overload for UpnpCoordinatorIntegration:wakeup_device.")
-        return
+        raise NotImplementedError("Device wakeup functionality is not yet implemented for UPnP coordinator")
 
     def _create_root_device(self, manufacturer: str, model_number: str, model_description: str) -> UpnpRootDevice:
         """
@@ -705,8 +725,7 @@ class UpnpCoordinator(CoordinatorBase):
 
     def _device_cache_verify_device_info(self, device_hint: str, device_filename: str, device_info: dict):
         """
-            Verifies cached device information by loading the device
-            description and ensuring the UDN matches the expected hint.
+            Verifies cached device information by loading the device description and ensuring the UDN matches the expected hint.
 
             :param device_hint: The identifier hint for the device.
             :param device_filename: Path to the cached device file.
@@ -730,13 +749,21 @@ class UpnpCoordinator(CoordinatorBase):
                     if udn_element is not None:
                         udn_full = udn_element.text.lstrip("uuid:")
                         if udn_full.find(device_hint) < 0:
-                            os.remove(device_filename)
+                            try:
+                                os.remove(device_filename)
+                            except FileNotFoundError:
+                                pass  # File already removed or doesn't exist
                         else:
                             valid = True
             except ConnectionError:
                 pass
-        else:
-            os.remove(device_filename)
+
+        # If we can't connect to validate, remove the cached file
+        if not valid:
+            try:
+                os.remove(device_filename)
+            except FileNotFoundError:
+                pass  # File already removed or doesn't exist
 
         return valid
 
@@ -906,10 +933,23 @@ class UpnpCoordinator(CoordinatorBase):
                 
                 if message_length is not None:
                     remaining_length = message_length - read_so_far
+                
+                # If we reach here, processing was successful
+                processing_successful = True
 
         finally:
-            asock.sendall(UPNP_SUBSCRIPTION_NOTIFY_RESPONSE_OK)
-            asock.close()
+            # Only send success response if processing completed successfully
+            if 'processing_successful' in locals() and processing_successful:
+                try:
+                    asock.sendall(UPNP_SUBSCRIPTION_NOTIFY_RESPONSE_OK)
+                except Exception as send_ex:
+                    logger.warning("Failed to send success response: %s", send_ex)
+            
+            # Always attempt to close the socket, but handle errors gracefully
+            try:
+                asock.close()
+            except Exception as close_ex:
+                logger.debug("Error closing socket: %s", close_ex)
 
         request = cbbuffer.getvalue()
 
@@ -1006,14 +1046,14 @@ class UpnpCoordinator(CoordinatorBase):
         if MSearchKeys.IP not in req_headers:
             req_headers[MSearchKeys.IP] = ip_addr
 
-        if usn.find("::") > -1:
+        if "::" in usn:
             usn_parts = usn.split("::")
-            if len(usn_parts) >= 2:
+            if len(usn_parts) >= 2 and usn_parts[0]:  # Ensure first part is not empty
                 usn_device = usn_parts[0].lstrip("uuid:")
                 usn_class = usn_parts[1]
             else:
-                # Malformed USN, log warning and skip processing
-                self.logger.warning("Malformed USN format '%s': expected at least 2 parts separated by '::'", usn)
+                # Malformed USN (empty device part), log warning and skip processing
+                self.logger.warning("Malformed USN format '%s': device part is empty or missing", usn)
                 return
 
             ifname = get_interface_for_ip(ip_addr)
@@ -1266,7 +1306,7 @@ class UpnpCoordinator(CoordinatorBase):
                         wkfunc(*wkargs)
                     else:
                         self.logger.warning("Worker thread acquired semaphore but queue is empty")
-                except: # pylint: disable=bare-except
+                except Exception:  # Allow system exceptions like KeyboardInterrupt to propagate
                     self.logger.exception("UpnpCoordinator: Worker exception.")
                 finally:
                     self._queue_lock.release()
@@ -1378,8 +1418,12 @@ class UpnpCoordinator(CoordinatorBase):
                                 try:
                                     # We create the device
                                     dev_extension = self._create_root_device(manufacturer, modelNumber, modelDescription)
-                                except:
-                                    errmsg = "ERROR: Unable to create device mfg=%s model=%s desc=%s\nTRACEBACK:\n" % (manufacturer, modelNumber, modelDescription)
+                                except Exception:
+                                    # Handle potential None values in error message formatting
+                                    mfg_str = manufacturer if manufacturer is not None else "<unknown>"
+                                    model_str = modelNumber if modelNumber is not None else "<unknown>"
+                                    desc_str = modelDescription if modelDescription is not None else "<unknown>"
+                                    errmsg = "ERROR: Unable to create device mfg=%s model=%s desc=%s\nTRACEBACK:\n" % (mfg_str, model_str, desc_str)
                                     errmsg += traceback.format_exc()
                                     self.logger.error(errmsg)
                                     raise
@@ -1452,7 +1496,7 @@ class UpnpCoordinator(CoordinatorBase):
                     # as a test code bug that needs to be fixed.
                     raise
 
-                except:  # pylint: disable=bare-except
+                except Exception:  # Allow system exceptions like KeyboardInterrupt to propagate
                     exmsg = traceback.format_exc()
                     errmsg_lines = [
                         "ERROR: Unable to parse description for. IP: %s LOCATION: %s" % (ip_addr, location),
@@ -1470,7 +1514,7 @@ class UpnpCoordinator(CoordinatorBase):
                 # as a test code bug that needs to be fixed.
                 raise
 
-            except:  # pylint: disable=bare-except
+            except Exception:  # Allow system exceptions like KeyboardInterrupt to propagate
                 exmsg = traceback.format_exc()
                 errmsg_lines = [
                     "ERROR: Unable to parse description for. IP: %s LOCATION: %s" % (ip_addr, location),

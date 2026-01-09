@@ -62,6 +62,9 @@ def pull_service_description(service_scan_directory: str, device_desc: Basic1Dev
     service_type = service_evidence.serviceType
 
     service_agency, service_name = parse_service_type(service_type)
+    
+    # Initialize service_desc_url to avoid NameError in exception handlers
+    service_desc_url = "unknown"
 
     try:
         service_dir = os.path.join(service_scan_directory, service_agency)

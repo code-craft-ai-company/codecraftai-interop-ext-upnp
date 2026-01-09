@@ -49,8 +49,8 @@ class UpnpErrorCodes(Enum):
         An enumeration of the standard UPnP error codes
     """
     InvalidAction = 401
-    InvalidArguments = 402  # Changed from InvalidArgs to match standard
-    DeprecatedErrorCode = 403  # Changed from Deprecated to match standard
+    InvalidArgs = 402  # Fixed: Use standard UPnP error code name
+    ActionNotAuthorized = 403  # Fixed: This should be 403 per UPnP spec, not deprecated
     ActionFailed = 501
     ArgumentValueInvalid = 600
     ArgumentValueOutOfRange = 601
@@ -58,19 +58,18 @@ class UpnpErrorCodes(Enum):
     OutOfMemory = 603
     HumanInterventionRequired = 604
     StringArgumentTooLong = 605
-    ActionNotAuthorized = 606
-    SignatureFailure = 607
-    SignatureMissing = 608
-    NotEncrypted = 609
-    InvalidSequence = 610
-    InvalidControlURL = 611
-    NoSuchSession = 612
+    SignatureFailure = 606  # Fixed: Moved to correct code 606
+    SignatureMissing = 607  # Fixed: Moved to correct code 607
+    NotEncrypted = 608  # Fixed: Moved to correct code 608
+    InvalidSequence = 609  # Fixed: Moved to correct code 609
+    InvalidControlURL = 610  # Fixed: Moved to correct code 610
+    NoSuchSession = 611  # Fixed: Moved to correct code 611
 
 
 UPNP_ERROR_TEST_LOOKUP = {
     401: "Invalid Action",
-    402: "Invalid Arguments",
-    403: "Deprecated Error Code",
+    402: "Invalid Args",
+    403: "Action Not Authorized",
     501: "Action Failed",
     600: "Argument Value Invalid",
     601: "Argument Value Out of Range",
@@ -78,13 +77,12 @@ UPNP_ERROR_TEST_LOOKUP = {
     603: "Out of Memory",
     604: "Human Intervention Required",
     605: "String Argument Too Long",
-    606: 'Action Not Authorized',
-    607: 'Signature Failure',
-    608: 'Signature Missing',
-    609: 'Not Encrypted',
-    610: 'Invalid Sequence',
-    611: 'Invalid Control URL',
-    612: 'No Such Session'
+    606: 'Signature Failure',
+    607: 'Signature Missing',
+    608: 'Not Encrypted',
+    609: 'Invalid Sequence',
+    610: 'Invalid Control URL',
+    611: 'No Such Session'
 }
 
 # 606-6124 Reserved These ErrorCodes are reserved for UPnP DeviceSecurity.

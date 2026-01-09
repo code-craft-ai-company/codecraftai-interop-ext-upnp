@@ -15,7 +15,7 @@ class BoseDeviceClassGenerator(UpnpDeviceClassGenerator):
         return BOSE_MANUFACTURER_NAME
 
     @classmethod
-    def generate_device_class(description: str) -> str:
+    def generate_device_class(cls, description: str) -> str:
         return
     
 

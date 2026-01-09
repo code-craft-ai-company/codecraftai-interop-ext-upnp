@@ -72,7 +72,7 @@ def xml_format_basic1_device_desc(iconList: Optional[List[IconDesc]] = None, ser
             f'{indent}        <iconList>'
         ])
         
-        icon_indent = indent + "    "
+        icon_indent = indent + "            "
         for icon in iconList:
             desc_lines.append(icon.as_xml(indent=icon_indent))
 
@@ -85,7 +85,7 @@ def xml_format_basic1_device_desc(iconList: Optional[List[IconDesc]] = None, ser
             f'{indent}        <serviceList>'
         ])
         
-        service_indent = indent + "    "
+        service_indent = indent + "            "
         for service in serviceList:
             desc_lines.append(service.as_xml(indent=service_indent))
 
@@ -98,7 +98,7 @@ def xml_format_basic1_device_desc(iconList: Optional[List[IconDesc]] = None, ser
             f'{indent}        <deviceList>'
         ])
         
-        device_indent = indent + "    "
+        device_indent = indent + "            "
         for device in deviceList:
             desc_lines.append(device.as_xml(indent=device_indent))
 

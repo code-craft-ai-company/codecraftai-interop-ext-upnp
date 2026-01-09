@@ -118,7 +118,17 @@ class DeviceEvidence:
             The device component of the USN identifier. This is the UUID part before the '::' separator.
         """
         if "::" in self._usn:
-            dev_part = self._usn.split("::")[0]
+            parts = self._usn.split("::")
+            if len(parts[0]) > 0:
+                dev_part = parts[0]
+            else:
+                # Fallback for malformed USN (empty first part, e.g., starts with "::")
+                # Log warning for debugging purposes
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("Malformed USN encountered (starts with '::'): '%s'", self._usn)
+                # Return a meaningful fallback instead of the malformed USN
+                dev_part = "unknown-device"
         else:
             # For USNs without "::", the entire USN should be the device UUID
             # This handles root device USNs that don't include "::upnp:rootdevice"
@@ -138,7 +148,12 @@ class DeviceEvidence:
             The class component of the USN identifier. This is the service type part after the '::' separator.
         """
         if "::" in self._usn:
-            return self._usn.split("::")[1]
+            parts = self._usn.split("::")
+            if len(parts) > 1:
+                return parts[1]
+            else:
+                # Fallback for malformed USN - return default
+                return "upnp:rootdevice"
         else:
             return "upnp:rootdevice"
     

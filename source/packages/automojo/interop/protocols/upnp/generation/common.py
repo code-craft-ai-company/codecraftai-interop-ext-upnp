@@ -33,8 +33,8 @@ def parse_device_type(device_type_str: str) -> Tuple[str, str]:
     """
     parts = device_type_str.split(":")
     
-    if len(parts) < 5:
-        errmsg = f"The device string provided '{device_type_str}' does not have the expected format 'urn:agency:device:name:version'."
+    if len(parts) != 5:
+        errmsg = f"The device string provided '{device_type_str}' does not have the expected format 'urn:agency:device:name:version' (expected exactly 5 parts, got {len(parts)})."
         raise ValueError(errmsg)
     
     scheme = parts[0]
@@ -66,8 +66,9 @@ def parse_service_type(service_type_str: str) -> Tuple[str, str]:
     """
     parts = service_type_str.split(":")
     
-    if len(parts) < 5:
-        errmsg = f"The service string provided '{service_type_str}' does not have the expected format 'urn:agency:service:name:version'."
+    # Example of properly formed service type: "urn:schemas-upnp-org:service:ContentDirectory:1"
+    if len(parts) != 5:
+        errmsg = f"The service string provided '{service_type_str}' does not have the expected format 'urn:agency:service:name:version' (expected exactly 5 parts, got {len(parts)})."
         raise ValueError(errmsg)
     
     scheme = parts[0]

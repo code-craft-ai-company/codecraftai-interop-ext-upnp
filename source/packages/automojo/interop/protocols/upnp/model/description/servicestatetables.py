@@ -51,7 +51,8 @@ def process_state_table(service_state_table_el: Element, namespaces: Optional[di
         else:
             variablesTable[name] = varInfo
 
-            sendEvents = "no"
+            # According to UPnP spec, sendEvents defaults to "yes" if not specified
+            sendEvents = "yes"
             if "sendEvents" in state_variable_el.attrib:
                 sendEvents = state_variable_el.attrib["sendEvents"]
 

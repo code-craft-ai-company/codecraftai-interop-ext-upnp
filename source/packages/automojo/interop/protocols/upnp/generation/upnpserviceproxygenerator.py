@@ -96,6 +96,8 @@ TEMPLATE_ACTION_WITH_RETURN = """
             rtn_args = [out_params[k] for k in (%(out_params_list)s,)]
             if len(rtn_args) == 1:
                 rtn_args = rtn_args[0]
+            elif len(rtn_args) == 0:
+                rtn_args = None
 
         return rtn_args
 """
@@ -359,6 +361,8 @@ def process_service_state_table(svcStateTableNode: Element, namespaces: Optional
         var_type_node = stateVariableNode.find("dataType", namespaces=namespaces)
         if var_type_node is None:
             continue  # Skip variables without data types
+        if var_type_node.text is None:
+            continue  # Skip variables with empty data types
         var_type = var_type_node.text.strip()
         variable_info["dataType"] = var_type
 
@@ -446,9 +450,19 @@ def generate_service_proxies(svc_desc_directory: str, svc_proxy_directory: str):
                     service_type_parts = serviceType.split(":")
                     if len(service_type_parts) >= 5:
                         version = service_type_parts[-1]
-                        # Only append version if it's not already in the service name and version is numeric
-                        if version.isdigit() and not service_name_base.endswith(version):
-                            serviceName = service_name_base + version
+                        # Only append version if it's numeric and doesn't create redundancy
+                        if version.isdigit():
+                            # Check if service name already ends with this exact version number
+                            # Use word boundary check to avoid false matches like "Service11" + "1"
+                            if service_name_base.endswith(version) and len(service_name_base) > len(version):
+                                # Verify it's a proper version suffix, not just coincidental digits
+                                prefix_part = service_name_base[:-len(version)]
+                                if not prefix_part or not prefix_part[-1].isdigit():
+                                    serviceName = service_name_base
+                                else:
+                                    serviceName = service_name_base + version
+                            else:
+                                serviceName = service_name_base + version
                         else:
                             serviceName = service_name_base
                     else:
@@ -484,7 +498,7 @@ def generate_service_proxies(svc_desc_directory: str, svc_proxy_directory: str):
                         safe_name = safe_name.replace(":", "").replace("-", "").replace(".", "")
                         # Limit to reasonable length and ensure it starts with a letter
                         serviceName = safe_name[:50] if safe_name else "UnknownService"
-                        if len(serviceName) == 0 or not serviceName[0].isalpha():
+                        if len(serviceName) == 0 or (len(serviceName) > 0 and not serviceName[0].isalpha()):
                             serviceName = "Service" + serviceName if len(serviceName) > 0 else "UnknownService"
 
                 className = serviceName + "ServiceProxy"

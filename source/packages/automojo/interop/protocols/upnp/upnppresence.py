@@ -60,9 +60,9 @@ from automojo.interop.protocols.upnp.model.description.deviceevidence import Dev
 from automojo.interop.protocols.upnp.model.description.serviceevidence import ServiceEvidence
 
 
-REGEX_NOTIFY_HEADER = re.compile("NOTIFY[ ]+[*/]+[ ]+HTTP/1")
+REGEX_NOTIFY_HEADER = re.compile(r"NOTIFY\s+\*\s+HTTP/1")
 
-REGEX_SUBSCRIPTION_TIMEOUT = re.compile("^Seconds?-([0-9]+|infinite)", flags=re.IGNORECASE)
+REGEX_SUBSCRIPTION_TIMEOUT = re.compile("^Second-([0-9]+|infinite)", flags=re.IGNORECASE)
 
 logger = getEnhancedLogger()
 
@@ -120,7 +120,7 @@ def notify_parse_request(content: bytes) -> Tuple[Dict[str, str], str]:
 
         # Pop the NOTIFY header
         if len(resplines) > 0:
-            resplines.pop(0).strip()
+            resplines.pop(0)
 
         for nxtline in resplines:
             cidx = nxtline.find(":")
@@ -761,12 +761,11 @@ class UpnpPresence:
                         self._lock.acquire()
                         try:
                             for wid, search_window_ref in self._search_windows.items():
-
-                                    search_window: UpnpSearchWindow = search_window_ref()
-                                    if search_window is not None:
-                                        # If the search window is still active, then add the device to the search window
-                                        if search_window.is_active():
-                                            active_search_windows.append(search_window)
+                                search_window: UpnpSearchWindow = search_window_ref()
+                                if search_window is not None:
+                                    # If the search window is still active, then add the device to the search window
+                                    if search_window.is_active():
+                                        active_search_windows.append(search_window)
 
                         finally:
                             self._lock.release()
@@ -949,7 +948,21 @@ class UpnpPresence:
                 mobj = REGEX_SUBSCRIPTION_TIMEOUT.match(sub_timeout_str)
                 if mobj is not None:
                     timeout_str = mobj.groups()[0]
-                    sub_timeout = 86400 if timeout_str == "infinite" else int(timeout_str)
+                    if timeout_str == "infinite":
+                        sub_timeout = 86400  # Default to 24 hours for infinite
+                    else:
+                        try:
+                            sub_timeout = int(timeout_str)
+                            # Validate reasonable timeout range (1 second to 7 days)
+                            if sub_timeout < 1 or sub_timeout > 604800:
+                                logger.warning("Timeout value %d is outside reasonable range (1-604800 seconds), using default", sub_timeout)
+                                sub_timeout = 1800  # Default to 30 minutes
+                        except ValueError as ve:
+                            logger.warning("Invalid timeout value '%s' in TIMEOUT header: %s. Using default timeout.", timeout_str, ve)
+                            sub_timeout = 1800  # Default to 30 minutes
+                else:
+                    logger.warning("Timeout header '%s' does not match expected pattern. Using default timeout.", sub_timeout_str)
+                    sub_timeout = 1800  # Default to 30 minutes
 
                 if sub_sid is not None:
                     if sub_timeout is None:
@@ -1058,8 +1071,10 @@ class UpnpPresence:
             if presence_interfaces is not None:
                 self._presence_interfaces = presence_interfaces
             
-            # If running was False, the we are uninitialed and non of the threads have been created or started, set running
-            # to true and begin the startup of all threads.
+            # We only want start to be called once. We set running to true after start is called to prevent 
+            # other calls to start. The creator of the object generally calls start before giving this object 
+            # to any other threads. We need to set running to true first because the threads might exit if 
+            # running is not set to true.
             self._running = True
         finally:
             self._lock.release()
@@ -1080,18 +1095,19 @@ class UpnpPresence:
             presence_thread.start()
             sgate.wait()
 
-                sgate.clear()
-                callback_thread = threading.Thread(target=self._thread_entry_for_callback, name=f"am-upnp-callback-{ifname}", args=(sgate, ifname), daemon=True)
-                callback_thread.start()
-                sgate.wait()
-            
-                self._callback_threads[ifname] = callback_thread
-                self._presence_threads[ifname] = presence_thread
-
             sgate.clear()
-            self._msearch_thread = threading.Thread(target=self._thread_entry_for_msearch, name="am-upnp-search", args=(sgate,), daemon=True)
-            self._msearch_thread.start()
+            callback_thread = threading.Thread(target=self._thread_entry_for_callback, name=f"am-upnp-callback-{ifname}", args=(sgate, ifname), daemon=True)
+            callback_thread.start()
             sgate.wait()
+        
+            self._callback_threads[ifname] = callback_thread
+            self._presence_threads[ifname] = presence_thread
+
+        # Create the M-SEARCH thread once, outside the interface loop
+        sgate.clear()
+        self._msearch_thread = threading.Thread(target=self._thread_entry_for_msearch, name="am-upnp-search", args=(sgate,), daemon=True)
+        self._msearch_thread.start()
+        sgate.wait()
 
         return
 
@@ -1169,22 +1185,35 @@ class UpnpPresence:
             else:
                 ifaddr = get_ipv4_address(ifname)
                 if ifaddr is not None:
+                    temp_sock = None
+                    try:
+                        temp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        
+                        # Bind to port 0 so we can get an ephimeral port
+                        temp_sock.bind((ifaddr, 0))
 
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    
-                    # Bind to port 0 so we can get an ephimeral port
-                    sock.bind((ifaddr, 0))
+                        # Get the ephimeral port assigned to our callback socket
+                        _, port = temp_sock.getsockname()
 
-                    # Get the ephimeral port assigned to our callback socket
-                    _, port = sock.getsockname()
+                        # Listen with a small backlog of 1
+                        temp_sock.listen(1)
 
-                    # Listen with a small backlog of 1
-                    sock.listen(1)
+                        callback_addr = (ifaddr, port)
 
-                    callback_addr = (ifaddr, port)
-
-                    self._callback_sockets[ifname] = sock
-                    self._callback_address_from_iface[ifname] = callback_addr
+                        # Only store the socket if all operations succeeded
+                        self._callback_sockets[ifname] = temp_sock
+                        self._callback_address_from_iface[ifname] = callback_addr
+                        sock = temp_sock
+                        temp_sock = None  # Prevent cleanup in except block
+                        
+                    except Exception:
+                        # Clean up the socket if any operation failed
+                        if temp_sock is not None:
+                            try:
+                                temp_sock.close()
+                            except Exception:
+                                pass  # Ignore errors during cleanup
+                        raise
 
         finally:
             self._lock.release()
@@ -1282,6 +1311,11 @@ class UpnpPresence:
                                 content_length = None
                                 message_length = None
                 
+                if message_length is not None:
+                    remaining_length = message_length - read_so_far
+                else:
+                    # If we don't know the message length, continue reading in chunks
+                    remaining_length = 1024
                 if message_length is not None:
                     remaining_length = message_length - read_so_far
 
