@@ -87,15 +87,16 @@ def remove_extraneous_xml_declarations(xml_str):
         xml_str = xml_str.decode('utf-8', errors='replace')
 
     xml_declaration = ''
-    if xml_str.startswith('<?xml'):
-        parts = xml_str.split('?>', maxsplit=1)
-        if len(parts) == 2:
-            xml_declaration, xml_str = parts
-            xml_declaration += '?>'
-        else:
-            # Malformed XML declaration without closing ?>, treat entire string as content
-            xml_str = xml_str
-    xml_str = re.sub(r'<\?xml.*?\?>', '', xml_str, flags=re.I)
+
+    # Look for a valid XML declaration at the start of the string (allowing for whitespace)
+    # We use regex to be case-insensitive and robust
+    match = re.match(r'\s*<\?xml.*?\?>', xml_str, flags=re.I | re.DOTALL)
+    if match:
+        xml_declaration = match.group(0).strip()
+
+    # Remove all XML declarations from the content
+    xml_str = re.sub(r'<\?xml.*?\?>', '', xml_str, flags=re.I | re.DOTALL)
+
     return xml_declaration + xml_str
 
 class SoapProcessor:
@@ -130,8 +131,7 @@ class SoapProcessor:
 
         envelope = Element("s:Envelope")
         if envelope_attrib:
-            for eakey, eaval in envelope_attrib:
-                envelope.attrib.update({eakey: eaval})
+            envelope.attrib.update(envelope_attrib)
         else:
             envelope.attrib.update({'xmlns:s': NS_SOAP_ENV})
             envelope.attrib.update({'s:encodingStyle': encoding})
@@ -208,8 +208,7 @@ class SoapProcessor:
 
         envelope = Element("s:Envelope")
         if envelope_attrib:
-            for eakey, eaval in envelope_attrib:
-                envelope.attrib.update({eakey: eaval})
+            envelope.attrib.update(envelope_attrib)
         else:
             envelope.attrib.update({'xmlns:s': NS_SOAP_ENV})
             envelope.attrib.update({'s:encodingStyle': encoding})

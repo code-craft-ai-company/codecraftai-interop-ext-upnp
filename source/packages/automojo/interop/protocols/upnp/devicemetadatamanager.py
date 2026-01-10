@@ -69,7 +69,7 @@ class DeviceMetadataManager:
             return None
 
         try:
-            with open(desc_filename, 'r') as ddf:
+            with open(desc_filename, 'rb') as ddf:
                 desc_content = ddf.read()
 
                 try:
