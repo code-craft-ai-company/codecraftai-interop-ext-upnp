@@ -1392,11 +1392,13 @@ class UpnpPresence:
             if sock is None:
                 sock = self._get_callback_socket(ifname)
                 if sock is None:
+                    time.sleep(1)
                     continue
 
             try:
                 # Wait untile we get a connection or the socket is closed on us.
                 rcv_sock, rcv_addr =  sock.accept()
+                rcv_sock.settimeout(10.0)
 
                 # Queue the callback workpacket for dispatching by the dispatch pool
                 wkpacket = (self._process_callback, (ifname, rcv_addr, rcv_sock))
@@ -1433,7 +1435,11 @@ class UpnpPresence:
             Thread loop used to send and receive M-SEARCH discovery messages.
         """
 
-        self._msearch_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        self._lock.acquire()
+        try:
+            self._msearch_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        finally:
+            self._lock.release()
 
         sgate.set()
 
