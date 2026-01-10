@@ -163,6 +163,8 @@ class SoapProcessor:
                     # Convert unsupported types to string representation
                     if py_type not in PYTHON_TO_SOAP_TYPE_MAP:
                         arg_val = str(arg_val)
+                    elif isinstance(arg_val, bytes):
+                        arg_val = arg_val.decode('utf-8')
                     # else: arg_val is already a string, no conversion needed
                 elif soap_type == 'xsd:int' or soap_type == 'xsd:float':
                     arg_val = str(arg_val)
@@ -170,10 +172,14 @@ class SoapProcessor:
                     arg_val = "1" if arg_val else "0"
 
                 argElement = SubElement(methElement, arg_name)
-                #if typed and soap_type:
-                #    if not isinstance(type, QName):
-                #        soap_type = QName(NS_XSD, soap_type)
-                #    argElement.set(NS_XSI + "type", soap_type)
+                if typed and soap_type:
+                    # FIX: Don't use QName in set() for attribute value as ElementTree doesn't serialize it with prefix automatically in all versions/configurations
+                    # Instead, simply set the string value with the prefix.
+                    # We want xsi:type="xsd:string" (or whatever prefix points to NS_XSD)
+                    if ":" in soap_type:
+                        argElement.set("xsi:type", soap_type) # Assuming xmlns:xsi is bound
+                    else:
+                        argElement.set("xsi:type", "xsd:" + soap_type)
 
                 argElement.text = arg_val
         else:
@@ -230,6 +236,8 @@ class SoapProcessor:
                     # Convert unsupported types to string representation
                     if arg_val is not None and type(arg_val) not in PYTHON_TO_SOAP_TYPE_MAP:
                         arg_val = str(arg_val)
+                    elif isinstance(arg_val, bytes):
+                        arg_val = arg_val.decode('utf-8')
                     # else: arg_val is already a string, no conversion needed
                 elif soap_type == 'xsd:int' or soap_type == 'xsd:float':
                     arg_val = str(arg_val)
