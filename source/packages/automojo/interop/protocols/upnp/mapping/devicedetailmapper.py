@@ -162,6 +162,11 @@ class DeviceDetailMapper:
         
         device_desc = None
         create_device = None
+
+        if device_el is None:
+            err_msg = "Device description missing required 'device' element"
+            logger.error(err_msg)
+            raise ValueError(err_msg)
         
         if not is_embedded:
             create_device = cls._create_basic1_device_desc
@@ -405,4 +410,3 @@ class DeviceDetailMapper:
         spec_ver = SpecVersion(major=major, minor=minor)
 
         return spec_ver
-
