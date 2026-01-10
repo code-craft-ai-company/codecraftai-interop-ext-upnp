@@ -109,7 +109,10 @@ def device_description_find_components(location: str, docTree: ElementTree, name
         raise ValueError(f"Device description from '{location}' is missing required 'device' element")
 
     urlBase = None
-    baseURLNode = devNode.find("URLBase", namespaces=namespaces)
+    root_node = docTree.getroot()
+    baseURLNode = root_node.find("URLBase", namespaces=namespaces)
+    if baseURLNode is None:
+        baseURLNode = devNode.find("URLBase", namespaces=namespaces)
     if baseURLNode is not None:
         urlBase = baseURLNode.text
 
