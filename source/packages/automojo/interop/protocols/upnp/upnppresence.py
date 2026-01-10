@@ -1312,14 +1312,16 @@ class UpnpPresence:
                                              req_headers["CONTENT-LENGTH"], str(ex))
                                 content_length = None
                                 message_length = None
+                        else:
+                            # No content length implies header-only request; stop after headers.
+                            content_length = 0
+                            message_length = headers_length
                 
                 if message_length is not None:
                     remaining_length = message_length - read_so_far
                 else:
                     # If we don't know the message length, continue reading in chunks
                     remaining_length = 1024
-                if message_length is not None:
-                    remaining_length = message_length - read_so_far
 
             request = cbbuffer.getvalue()
 
