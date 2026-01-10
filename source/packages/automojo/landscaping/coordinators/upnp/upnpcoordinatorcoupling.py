@@ -138,8 +138,8 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
             utilized for bringing up its integration state.
         """
         # We need to call the base class, it sets the 'logger' member
-        super(UpnpCoordinatorIntegration, cls).declare_precedence()
-        return
+        precedence = super(UpnpCoordinatorIntegration, cls).declare_precedence()
+        return precedence
 
     @classmethod
     def diagnostic(cls, label: str, level: int, diag_folder: str):
