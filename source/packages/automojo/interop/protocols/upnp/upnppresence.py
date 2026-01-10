@@ -409,31 +409,50 @@ class UpnpPresence:
         finally:
             self._lock.release()
 
-        sock = self._get_search_socket()
+        # We need to send the M-SEARCH message out on each interface that we are monitoring
+        for ifname in self._presence_interfaces:
+            sock = self._get_search_socket()
 
-        try:
-            sock.sendto(msearch_msg, (self._multicast_address, self._multicast_port))
-        except OSError as serr:
-            # If we get an OSError while sending, our socket is likely invalid and we need
-            # to force the socket to be re-freshed
-            self._lock.acquire()
+            # Determine if we can set the interface for the multicast packet
+            ifaddr = get_ipv4_address(ifname)
+            if ifaddr:
+                try:
+                    # IP_MULTICAST_IF expects 4-byte IP address in network byte order
+                    # However, python socket.setsockopt can take a string IP address for IP_MULTICAST_IF on some platforms
+                    # or an interface index. It's platform dependent.
+                    # A safer way to send on a specific interface for multicast with a single socket (if bound to 0.0.0.0)
+                    # is to use IP_MULTICAST_IF.
+
+                    # On Linux/Unix, it often takes struct ip_mreq or just the IP string.
+                    # socket.inet_aton(ifaddr) converts IP string to packed 4-byte string.
+
+                    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(ifaddr))
+                except Exception as ex:
+                    logger.debug(f"Failed to set IP_MULTICAST_IF for interface {ifname}: {ex}")
+
             try:
-                # Close the socket we were using if it's still the current socket
-                if self._msearch_sock is sock:
-                    try:
-                        self._msearch_sock.close()
-                    except Exception:
-                        pass  # Ignore errors when closing socket
-                    self._msearch_sock = None
-                elif sock is not None:
-                    # If it's a different socket, still try to close our local reference
-                    try:
-                        sock.close()
-                    except Exception:
-                        pass  # Ignore errors when closing socket
-            finally:
-                self._lock.release()
-            raise
+                sock.sendto(msearch_msg, (self._multicast_address, self._multicast_port))
+            except OSError as serr:
+                # If we get an OSError while sending, our socket is likely invalid and we need
+                # to force the socket to be re-freshed
+                self._lock.acquire()
+                try:
+                    # Close the socket we were using if it's still the current socket
+                    if self._msearch_sock is sock:
+                        try:
+                            self._msearch_sock.close()
+                        except Exception:
+                            pass  # Ignore errors when closing socket
+                        self._msearch_sock = None
+                    elif sock is not None:
+                        # If it's a different socket, still try to close our local reference
+                        try:
+                            sock.close()
+                        except Exception:
+                            pass  # Ignore errors when closing socket
+                finally:
+                    self._lock.release()
+                raise
 
         return disco_window
 

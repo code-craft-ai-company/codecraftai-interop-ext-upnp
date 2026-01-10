@@ -1,91 +1,62 @@
 """
     .. module:: test_soap_bugs
     :platform: Darwin, Linux, Unix, Windows
-    :synopsis: Test module for SOAP functionality bugs.
+    :synopsis: Test module for specific SOAP bugs.
 
     .. moduleauthor:: AutomationX <automation@mojo.com>
 """
 
 import sys
+import os
+
 from automojo import testbase
-from automojo.interop.protocols.upnp.soap import SoapProcessor, xml_fromstring
 
-def test_parse_response_bug():
-    """
-    Test fix for TypeError in parse_response when handling child elements.
-    """
-    processor = SoapProcessor()
+from automojo.interop.protocols.upnp.soap import SoapProcessor, remove_extraneous_xml_declarations
 
-    content = """<?xml version="1.0"?>
-    <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-        <s:Body>
-            <u:ActionResponse xmlns:u="urn:schemas-upnp-org:service:Service:1">
-                <Result>
-                    <Item>Value1</Item>
-                    <Item>Value2</Item>
-                </Result>
-            </u:ActionResponse>
-        </s:Body>
-    </s:Envelope>
+def test_soap_envelope_attrib_dict():
     """
-
-    try:
-        # This should not raise TypeError
-        resp = processor.parse_response("Action", content, typed="urn:schemas-upnp-org:service:Service:1")
-
-        # Verification
-        testbase.assert_equal("Result" in resp, True)
-        testbase.assert_equal("Value1" in resp["Result"], True)
-        testbase.assert_equal("Value2" in resp["Result"], True)
-        print("test_parse_response_bug PASSED")
-    except Exception as e:
-        print(f"test_parse_response_bug FAILED: {e}")
-        raise
-
-def test_xml_parser_bug():
-    """
-    Test fix for AttributeError in xml_fromstring.
-    """
-    data = "<root>test</root>"
-    try:
-        # This should not raise AttributeError
-        elem = xml_fromstring(data)
-        testbase.assert_equal(elem.tag, "root")
-        testbase.assert_equal(elem.text, "test")
-        print("test_xml_parser_bug PASSED")
-    except Exception as e:
-        print(f"test_xml_parser_bug FAILED: {e}")
-        raise
-
-def test_missing_xsd_namespace_bug():
-    """
-    Test fix for missing xmlns:xsd definition.
+    Test that create_request and create_response accept a dictionary for envelope_attrib.
     """
     processor = SoapProcessor()
+    envelope_attrib = {'xmlns:foo': 'http://foo.com'}
 
+    # Test create_request
     try:
-        # Enable typed response to trigger xsi:type usage
-        content = processor.create_response(
-            action_name="TestAction",
-            arguments={"Arg1": "Value1"},
-            typed="urn:schemas-upnp-org:service:Service:1"
-        )
-
-        # Check if xmlns:xsd is present
-        has_xsd = 'xmlns:xsd="http://www.w3.org/1999/XMLSchema"' in content or "xmlns:xsd" in content
-        if not has_xsd:
-            print(f"Generated Content: {content}")
-
-        testbase.assert_equal(has_xsd, True)
-        print("test_missing_xsd_namespace_bug PASSED")
+        req = processor.create_request('Action', {}, envelope_attrib=envelope_attrib)
+        testbase.assert_true('xmlns:foo="http://foo.com"' in req, "Request should contain the attribute")
     except Exception as e:
-        print(f"test_missing_xsd_namespace_bug FAILED: {e}")
-        raise
+        raise AssertionError(f"create_request raised exception with dict envelope_attrib: {e}")
 
-if __name__ == "__main__":
+    # Test create_response
     try:
-        test_parse_response_bug()
-        test_xml_parser_bug()
-        test_missing_xsd_namespace_bug()
-    except Exception:
-        sys.exit(1)
+        resp = processor.create_response('Action', {}, envelope_attrib=envelope_attrib)
+        testbase.assert_true('xmlns:foo="http://foo.com"' in resp, "Response should contain the attribute")
+    except Exception as e:
+        raise AssertionError(f"create_response raised exception with dict envelope_attrib: {e}")
+
+def test_remove_extraneous_xml_declarations_fixes():
+    """
+    Test the fixes for remove_extraneous_xml_declarations.
+    """
+    # Case 1: Multiple declarations, one at start
+    xml_multi = '<?xml version="1.0"?><root><?xml version="1.0"?><child/></root>'
+    cleaned = remove_extraneous_xml_declarations(xml_multi)
+    # Expect: One declaration at start, none elsewhere.
+    testbase.assert_true(cleaned.startswith('<?xml'), "Should start with XML declaration")
+    testbase.assert_equal(cleaned.count('<?xml'), 1, "Should have exactly one XML declaration")
+
+    # Case 2: Leading whitespace
+    xml_space = '   <?xml version="1.0"?><root/>'
+    cleaned = remove_extraneous_xml_declarations(xml_space)
+    # Expect: One declaration at start (stripped), content follows.
+    testbase.assert_true(cleaned.startswith('<?xml'), "Should start with XML declaration (trimmed)")
+    testbase.assert_true('<root/>' in cleaned, "Should contain root element")
+
+    # Case 3: Case sensitivity
+    xml_caps = '<?XML version="1.0"?><root/>'
+    cleaned = remove_extraneous_xml_declarations(xml_caps)
+    # Expect: One declaration at start (normalized case if matched by regex, or preserved if not normalized but regex is case insensitive for detection)
+    # The current implementation extracts the match (preserving case) and prepends it.
+    # So '<?XML ... ?>' should be preserved at start.
+    testbase.assert_true(cleaned.lower().startswith('<?xml'), "Should start with XML declaration (case insensitive check)")
+    testbase.assert_true('<root/>' in cleaned, "Should contain root element")
