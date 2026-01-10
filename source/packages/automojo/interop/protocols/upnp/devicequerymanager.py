@@ -68,8 +68,9 @@ class DeviceQueryManager:
             
             # Check for HTTP errors and handle them appropriately
             try:
-                raise_for_http_status(resp)
-            except requests.exceptions.HTTPError as http_err:
+                ctxmsg = f"While querying device description from {query_url}"
+                raise_for_http_status(resp.status_code, resp.content, ctxmsg)
+            except Exception as http_err:
                 logger.warning(f"HTTP error {resp.status_code} when querying device description from {query_url}: {http_err}")
                 return None
 
