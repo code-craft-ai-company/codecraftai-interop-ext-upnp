@@ -82,7 +82,7 @@ class BoseDeviceDetail(Basic1DeviceDesc):
         codename: str,
         color: str,
         software_version: str,
-        multi_room: BoseMultiRoomVersions,
+        multi_room: Optional[BoseMultiRoomVersions],
         modelNumber: str = "",
         serialNumber: str = "",
         manufacturerURL: str = "",
@@ -110,7 +110,7 @@ class BoseDeviceDetail(Basic1DeviceDesc):
             :param codename: Product code name.
             :param color: Product color.
             :param software_version: Firmware version.
-            :param multi_room: Multi room version information.
+            :param multi_room: Multi room version information or None if not available.
             :param modelNumber: Optional model number string.
             :param serialNumber: Optional serial number.
             :param manufacturerURL: Optional manufacturer URL.
@@ -139,6 +139,7 @@ class BoseDeviceDetail(Basic1DeviceDesc):
             serialNumber=serialNumber,
             UDN=UDN,
             UPC=UPC,
+            presentationURL=presentationURL,
             deviceList=deviceList,
             iconList=iconList,
             serviceList=serviceList,

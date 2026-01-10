@@ -417,9 +417,12 @@ def generate_service_proxies(svc_desc_directory: str, svc_proxy_directory: str):
 
                 namespaces = None
                 doc_node_tag = docNode.tag
-                if doc_node_tag.find("}") > 0:
-                    default_ns = doc_node_tag[doc_node_tag.find("{") + 1:doc_node_tag.find("}")]
-                    namespaces = {"": default_ns}
+                # Extract namespace from tag format: {namespace}tagname
+                if doc_node_tag.startswith("{") and "}" in doc_node_tag:
+                    end_brace_pos = doc_node_tag.find("}")
+                    if end_brace_pos > 1:  # Must have at least one character between { and }
+                        default_ns = doc_node_tag[1:end_brace_pos]  # Extract between { and }
+                        namespaces = {"": default_ns}
 
                 variablesTable = {}
                 typesTable = {}
@@ -453,16 +456,17 @@ def generate_service_proxies(svc_desc_directory: str, svc_proxy_directory: str):
                         # Only append version if it's numeric and doesn't create redundancy
                         if version.isdigit():
                             # Check if service name already ends with this exact version number
-                            # Use word boundary check to avoid false matches like "Service11" + "1"
-                            if service_name_base.endswith(version) and len(service_name_base) > len(version):
-                                # Verify it's a proper version suffix, not just coincidental digits
+                            if (service_name_base.endswith(version) and 
+                                len(service_name_base) > len(version)):
+                                # Verify it's a proper version suffix by checking the character before the version
                                 prefix_part = service_name_base[:-len(version)]
-                                if not prefix_part or not prefix_part[-1].isdigit():
-                                    serviceName = service_name_base
+                                # The character before version should not be a digit (proper version suffix)
+                                if prefix_part and not prefix_part[-1].isdigit():
+                                    serviceName = service_name_base  # Already has version
                                 else:
-                                    serviceName = service_name_base + version
+                                    serviceName = service_name_base + version  # Append version
                             else:
-                                serviceName = service_name_base + version
+                                serviceName = service_name_base + version  # Append version
                         else:
                             serviceName = service_name_base
                     else:
@@ -498,7 +502,7 @@ def generate_service_proxies(svc_desc_directory: str, svc_proxy_directory: str):
                         safe_name = safe_name.replace(":", "").replace("-", "").replace(".", "")
                         # Limit to reasonable length and ensure it starts with a letter
                         serviceName = safe_name[:50] if safe_name else "UnknownService"
-                        if len(serviceName) == 0 or (len(serviceName) > 0 and not serviceName[0].isalpha()):
+                        if len(serviceName) == 0 or not serviceName[0].isalpha():
                             serviceName = "Service" + serviceName if len(serviceName) > 0 else "UnknownService"
 
                 className = serviceName + "ServiceProxy"

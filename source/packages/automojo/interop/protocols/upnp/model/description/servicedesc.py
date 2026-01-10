@@ -88,9 +88,12 @@ class ServiceDesc:
             if doc_node_tag.startswith("{") and "}" in doc_node_tag:
                 # Extract namespace from the root element tag (format: {namespace}localname)
                 closing_brace_pos = doc_node_tag.find("}")
-                if closing_brace_pos > 1:  # Must have at least one character between { and }
+                if closing_brace_pos > 0:  # Must have opening brace at position 0
                     default_ns = doc_node_tag[1:closing_brace_pos]  # Skip the opening {
-                    namespaces = {"": default_ns}
+                    # Only update namespaces if we extracted a non-empty namespace
+                    if default_ns:
+                        namespaces = {"": default_ns}
+                    # If namespace is empty ({}), keep the default UPNP_SERVICE1_NAMESPACE
 
             specVersionNode = descDoc.find("specVersion", namespaces=namespaces)
             if specVersionNode is None:
@@ -136,13 +139,9 @@ class ServiceDesc:
         """
         try:
             resp: requests.Response = requests.get(serv_desc_url, timeout=30)
-            try:
-                resp.raise_for_status()  # Raises HTTPError for bad HTTP status codes
-                
-                svcdesc = cls.process_service_description(resp.text)
-            finally:
-                # Ensure the response is properly closed to free up the connection
-                resp.close()
+            resp.raise_for_status()  # Raises HTTPError for bad HTTP status codes
+            
+            svcdesc = cls.process_service_description(resp.text)
             
         except requests.exceptions.HTTPError as ex:
             errmsg = f"HTTP error downloading service description from '{serv_desc_url}': {ex.response.status_code} {ex.response.reason}"

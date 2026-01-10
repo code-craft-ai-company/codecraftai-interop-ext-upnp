@@ -194,17 +194,22 @@ class UpnpSearchWindow:
             notifying the calling thread when the search window has closed.
         """
 
-        self._window_state = UpnpSearchWindowState.ACTIVE
-        self._wait_gate.clear()
+        with self._lock:
+            self._window_state = UpnpSearchWindowState.ACTIVE
+            self._wait_gate.clear()
 
         sgate.set()
 
-        while self._window_state == UpnpSearchWindowState.ACTIVE:
+        while True:
+            with self._lock:
+                if self._window_state != UpnpSearchWindowState.ACTIVE:
+                    break
             
             now = datetime.now()
 
             if now > self._end:
-                self._window_state = UpnpSearchWindowState.TIMEOUT
+                with self._lock:
+                    self._window_state = UpnpSearchWindowState.TIMEOUT
                 break
 
             # Get current state atomically
@@ -224,6 +229,8 @@ class UpnpSearchWindow:
                 
                 for nxt_hint in checking_for:
                     # Look for the first device that matches this hint
+                    # Each hint matches only the first available device that satisfies the hint criteria
+                    # Once a device is matched to a hint, it cannot be matched to other hints (one device per hint)
                     for device_id, device in current_found.items():
                         # Skip devices that have already been matched to other hints
                         if device_id in used_devices:

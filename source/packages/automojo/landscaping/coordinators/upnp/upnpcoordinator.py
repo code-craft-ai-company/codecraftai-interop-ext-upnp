@@ -107,11 +107,13 @@ def http_parse_header(header_content):
     
     for hline in header_lines[1:]:
         name_end = hline.find(b":")
-        if name_end > -1:
+        if name_end > 0:  # Header name must be at least 1 character long
             try:
-                hname = hline[:name_end].upper().decode('utf-8').strip()
+                hname = hline[:name_end].decode('utf-8').strip().upper()
                 hval = hline[name_end + 1:].decode('utf-8').strip()
-                headers[hname] = hval
+                # Only add headers with non-empty names after stripping
+                if hname:
+                    headers[hname] = hval
             except UnicodeDecodeError:
                 # Skip malformed headers that can't be decoded as UTF-8
                 continue
@@ -926,13 +928,16 @@ class UpnpCoordinator(CoordinatorBase):
                                 message_length = headers_length + content_length
                             except (ValueError, TypeError) as ex:
                                 # Handle malformed Content-Length header gracefully
-                                logger.warning("Invalid Content-Length header value '%s': %s. Skipping content length parsing.", 
+                                self.logger.warning("Invalid Content-Length header value '%s': %s. Skipping content length parsing.", 
                                              req_headers["CONTENT-LENGTH"], str(ex))
                                 content_length = None
                                 message_length = None
                 
                 if message_length is not None:
                     remaining_length = message_length - read_so_far
+                    # Exit loop if we've read all expected data
+                    if remaining_length <= 0:
+                        break
                 
                 # If we reach here, processing was successful
                 processing_successful = True
@@ -943,13 +948,13 @@ class UpnpCoordinator(CoordinatorBase):
                 try:
                     asock.sendall(UPNP_SUBSCRIPTION_NOTIFY_RESPONSE_OK)
                 except Exception as send_ex:
-                    logger.warning("Failed to send success response: %s", send_ex)
+                    self.logger.warning("Failed to send success response: %s", send_ex)
             
             # Always attempt to close the socket, but handle errors gracefully
             try:
                 asock.close()
             except Exception as close_ex:
-                logger.debug("Error closing socket: %s", close_ex)
+                self.logger.debug("Error closing socket: %s", close_ex)
 
         request = cbbuffer.getvalue()
 
@@ -1499,7 +1504,7 @@ class UpnpCoordinator(CoordinatorBase):
                 except Exception:  # Allow system exceptions like KeyboardInterrupt to propagate
                     exmsg = traceback.format_exc()
                     errmsg_lines = [
-                        "ERROR: Unable to parse description for. IP: %s LOCATION: %s" % (ip_addr, location),
+                        "ERROR: Unable to create or initialize device for. IP: %s LOCATION: %s" % (ip_addr, location),
                         exmsg
                     ]
                     for k, v in deviceinfo.items():
@@ -1517,7 +1522,7 @@ class UpnpCoordinator(CoordinatorBase):
             except Exception:  # Allow system exceptions like KeyboardInterrupt to propagate
                 exmsg = traceback.format_exc()
                 errmsg_lines = [
-                    "ERROR: Unable to parse description for. IP: %s LOCATION: %s" % (ip_addr, location),
+                    "ERROR: Unable to load device description for. IP: %s LOCATION: %s" % (ip_addr, location),
                     exmsg
                 ]
                 for k, v in deviceinfo.items():

@@ -30,10 +30,10 @@ class BoseEmbeddedDeviceDetail(BoseDeviceDetail):
     """
     
     def __init__(self, *, specVersion: SpecVersion, deviceType: str, friendlyName: str, manufacturer: str, modelName: str, UDN: str,
-                 mac_addr: str, generation: str, codename: str, color: str, software_version: str, multi_room: BoseMultiRoomVersions,
+                 mac_addr: str, generation: str, codename: str, color: str, software_version: str, multi_room: Optional[BoseMultiRoomVersions],
                  modelNumber: str = "", serialNumber: str = "", manufacturerURL: str = "", modelDescription: str = "", modelURL: str = "",
                  UPC: str = "", presentationURL: str = "", iconList: Optional[List[IconDesc]] = None, serviceList: Optional[List[ServiceEvidence]] = None,
-                 deviceList: Optional[List['EmbeddedDeviceDesc']] = None, **extra: Dict[str, str]):
+                 deviceList: Optional[List['EmbeddedDeviceDesc']] = None, locationURL: Optional[str] = None, **extra: Dict[str, str]):
         """
             Initializes the embedded device detail.
 
@@ -48,7 +48,7 @@ class BoseEmbeddedDeviceDetail(BoseDeviceDetail):
             :param codename: Product code name.
             :param color: Device color value.
             :param software_version: Device software version.
-            :param multi_room: Multi room version information.
+            :param multi_room: Multi room version information or None if not available.
             :param modelNumber: Optional model number string.
             :param serialNumber: Optional serial number.
             :param manufacturerURL: Optional manufacturer URL.
@@ -78,7 +78,7 @@ class BoseEmbeddedDeviceDetail(BoseDeviceDetail):
                          iconList=iconList,
                          serviceList=serviceList,
                          deviceList=deviceList,
-                         locationURL=None,
+                         locationURL=locationURL,
                          **extra)
         return
 

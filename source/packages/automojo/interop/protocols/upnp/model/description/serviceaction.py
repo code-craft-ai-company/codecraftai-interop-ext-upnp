@@ -53,7 +53,11 @@ def process_action_list(actionListNode: Element, namespaces: Optional[dict] = No
                 argDirectionNode = argumentNode.find("direction", namespaces=namespaces)
                 if argDirectionNode is None or argDirectionNode.text is None:
                     raise ValueError(f"Argument '{argName}' in action '{actionName}' missing required 'direction' element")
-                argDirection = argDirectionNode.text
+                argDirection = argDirectionNode.text.strip().lower()
+                
+                # Validate direction is a valid UPnP direction
+                if argDirection not in ("in", "out"):
+                    raise ValueError(f"Argument '{argName}' in action '{actionName}' has invalid direction '{argDirectionNode.text}'. Must be 'in' or 'out'.")
 
                 argRelStateVar = None
                 argRelStateNode = argumentNode.find("relatedStateVariable", namespaces=namespaces)

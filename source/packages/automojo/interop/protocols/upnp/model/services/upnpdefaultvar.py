@@ -56,21 +56,28 @@ class UpnpDefaultVar:
         # Handle default value assignment first
         if value is None and default is not None:
             self._value = default
+        else:
+            self._value = value
 
-        # Initialize timestamps consistently
+        # Initialize timestamps consistently based on whether variable has a value
         if timestamp is not None:
+            # Explicit timestamp provided - validate that we also have a value
+            if self._value is None:
+                raise ValueError("If a timestamp is provided, a value must also be provided (either directly or via default)")
+            # Use provided timestamp for all timestamp fields
             self._created = timestamp
             self._updated = timestamp
             self._changed = timestamp
         else:
-            # If no timestamp provided and we have a value, use current time
+            # No explicit timestamp - set based on whether we have any value
             if self._value is not None:
+                # Variable has a value (either user-provided or default) - set timestamps
                 now = datetime.now()
                 self._created = now
                 self._updated = now
                 self._changed = now
             else:
-                # No value and no timestamp - leave as None until first update
+                # No value at all - leave timestamps as None until first update
                 self._created = None
                 self._updated = None
                 self._changed = None

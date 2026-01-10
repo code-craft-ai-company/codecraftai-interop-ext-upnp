@@ -50,23 +50,27 @@ class DeviceQueryManager:
         self._mapper_registry = DeviceDetailMapperRegistrySingleton()
         return
 
-    def query_device_description(self, query_url: str) -> Optional[Basic1DeviceDesc]:
+    def query_device_description(self, query_url: str, timeout: float = 30.0) -> Optional[Basic1DeviceDesc]:
         """
             Query a UPnP device for its description XML.
 
             :param query_url: URL from which to request the device description.
+            :param timeout: Timeout in seconds for the HTTP request (default: 30.0).
 
             :returns: Parsed :class:`Basic1DeviceDesc` or ``None`` on failure.
         """
 
         device_desc = None
+        resp = None
 
         try:
-            resp: requests.Response = requests.get(query_url, timeout=2)
+            resp = requests.get(query_url, timeout=timeout)
             
             # Check for HTTP errors and handle them appropriately
-            if resp.status_code != HTTPStatus.OK:
-                logger.warning(f"HTTP error {resp.status_code} when querying device description from {query_url}")
+            try:
+                raise_for_http_status(resp)
+            except requests.exceptions.HTTPError as http_err:
+                logger.warning(f"HTTP error {resp.status_code} when querying device description from {query_url}: {http_err}")
                 return None
 
             try:
@@ -101,6 +105,13 @@ class DeviceQueryManager:
             # Handle any other unexpected errors (but not HTTP errors which are handled above)
             err_msg = f"Unexpected error querying device description from {query_url}: {general_err}"
             logger.error(err_msg)
+        finally:
+            # Always close the response to prevent resource leaks
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass  # Ignore errors when closing response
 
         return device_desc
     

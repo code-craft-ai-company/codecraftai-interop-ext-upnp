@@ -764,8 +764,14 @@ class UpnpPresence:
                                 search_window: UpnpSearchWindow = search_window_ref()
                                 if search_window is not None:
                                     # If the search window is still active, then add the device to the search window
-                                    if search_window.is_active():
-                                        active_search_windows.append(search_window)
+                                    try:
+                                        if search_window.is_active():
+                                            active_search_windows.append(search_window)
+                                    except AttributeError:
+                                        # The search window object may have been garbage collected between
+                                        # the None check and the method call, so we skip it
+                                        logger.debug(f"Search window {wid} was garbage collected during processing")
+                                        continue
 
                         finally:
                             self._lock.release()
@@ -965,10 +971,6 @@ class UpnpPresence:
                     sub_timeout = 1800  # Default to 30 minutes
 
                 if sub_sid is not None:
-                    if sub_timeout is None:
-                        errmsg = f"Invalid timeout value in 'TIMEOUT' header: '{sub_timeout_str}'"
-                        raise ValueError(errmsg)
-
                     sub_expires = datetime.now() + timedelta(seconds=sub_timeout)
                     self._lock.acquire()
                     try:

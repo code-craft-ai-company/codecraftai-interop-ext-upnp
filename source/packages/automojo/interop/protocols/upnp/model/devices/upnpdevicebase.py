@@ -336,40 +336,66 @@ class UpnpDeviceBase:
         for serviceInfo in device_description.serviceList:
 
             service_url = serviceInfo.SCPDURL
-            if service_url is not None and not service_url.startswith("http"):
+            if service_url is None:
+                logger.warning("Service %s has no SCPDURL, skipping service description retrieval", 
+                             serviceInfo.serviceId)
+                continue
+                
+            if not service_url.startswith("http"):
                 if self._urlBase is None:
                     raise ValueError("The URLBase for the device must be set before processing service descriptions.")
 
-                service_url = self._urlBase.rstrip("/") + "/" + service_url.lstrip("/")
-
-                try:
-                    svc_desc_resp: requests.Response = requests.get(service_url, timeout=30)
-                    svc_desc_resp.raise_for_status()  # Raises HTTPError for bad HTTP status codes
+                # Handle relative URL construction more carefully
+                # Remove leading slashes but preserve the original if it was just "/"
+                if service_url == "/":
+                    # Root path is valid, use it as-is
+                    clean_service_url = ""
+                else:
+                    clean_service_url = service_url.lstrip("/")
                     
-                    # If we were able to obtain the service description document, then we can process it in order to
-                    # get the extended service description information needed to lookup any pre-existing code generated
-                    # service interop proxy classes.
-                    svckey = serviceInfo.get_extension_key()
-                    
-                    try:
-                        service_descriptions[svckey] = ServiceDesc.process_service_description(svc_desc_resp.text)
-                    except Exception as parse_err:
-                        logger.warning("Failed to parse service description for service %s at URL %s: %s", 
-                                     serviceInfo.serviceId, service_url, str(parse_err))
-                        # Continue processing other services even if one fails to parse
-                        
-                except requests.exceptions.Timeout:
-                    logger.warning("Timeout retrieving service description for service %s at URL %s", 
+                # Check if we have a valid path after cleaning
+                if not clean_service_url and service_url != "/":
+                    logger.warning("Service %s has invalid SCPDURL '%s', skipping service description retrieval", 
                                  serviceInfo.serviceId, service_url)
-                except requests.exceptions.HTTPError as http_err:
-                    logger.warning("HTTP error retrieving service description for service %s at URL %s: %s", 
-                                 serviceInfo.serviceId, service_url, str(http_err))
-                except requests.exceptions.RequestException as req_err:
-                    logger.warning("Network error retrieving service description for service %s at URL %s: %s", 
-                                 serviceInfo.serviceId, service_url, str(req_err))
-                except Exception as general_err:
-                    logger.error("Unexpected error retrieving service description for service %s at URL %s: %s", 
-                               serviceInfo.serviceId, service_url, str(general_err))
+                    continue
+                    
+                # Construct the full URL
+                base_url = self._urlBase.rstrip("/")
+                if clean_service_url:
+                    service_url = f"{base_url}/{clean_service_url}"
+                else:
+                    # Handle root path case - ensure trailing slash for root path
+                    service_url = f"{base_url}/"
+
+            # Process both relative and absolute URLs
+            try:
+                svc_desc_resp: requests.Response = requests.get(service_url, timeout=30)
+                svc_desc_resp.raise_for_status()  # Raises HTTPError for bad HTTP status codes
+                
+                # If we were able to obtain the service description document, then we can process it in order to
+                # get the extended service description information needed to lookup any pre-existing code generated
+                # service interop proxy classes.
+                svckey = serviceInfo.get_extension_key()
+                
+                try:
+                    service_descriptions[svckey] = ServiceDesc.process_service_description(svc_desc_resp.text)
+                except Exception as parse_err:
+                    logger.warning("Failed to parse service description for service %s at URL %s: %s", 
+                                 serviceInfo.serviceId, service_url, str(parse_err))
+                    # Continue processing other services even if one fails to parse
+                    
+            except requests.exceptions.Timeout:
+                logger.warning("Timeout retrieving service description for service %s at URL %s", 
+                             serviceInfo.serviceId, service_url)
+            except requests.exceptions.HTTPError as http_err:
+                logger.warning("HTTP error retrieving service description for service %s at URL %s: %s", 
+                             serviceInfo.serviceId, service_url, str(http_err))
+            except requests.exceptions.RequestException as req_err:
+                logger.warning("Network error retrieving service description for service %s at URL %s: %s", 
+                             serviceInfo.serviceId, service_url, str(req_err))
+            except Exception as general_err:
+                logger.error("Unexpected error retrieving service description for service %s at URL %s: %s", 
+                           serviceInfo.serviceId, service_url, str(general_err))
 
         self._device_lock.acquire()
         try:

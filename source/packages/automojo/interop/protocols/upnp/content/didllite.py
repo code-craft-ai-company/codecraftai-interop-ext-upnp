@@ -90,7 +90,36 @@ class DidlResource(NamedTuple):
         """
             Create a :class:`DidlResource` from an XML element.
         """
-        return
+        # Extract required protocolInfo attribute
+        try:
+            protocol_info = res_element.attrib["protocolInfo"]
+        except KeyError:
+            raise ProtocolError("DIDL resource element is missing required attribute 'protocolInfo'.")
+        
+        # Extract URI from element text
+        uri = res_element.text
+        if uri is None:
+            raise ProtocolError("DIDL resource element is missing URI content.")
+        
+        # Extract optional attributes
+        duration = res_element.attrib.get("duration")
+        
+        size = None
+        size_str = res_element.attrib.get("size")
+        if size_str is not None:
+            try:
+                size = int(size_str)
+            except ValueError:
+                raise ProtocolError(f"DIDL resource element has invalid size attribute: '{size_str}'")
+        
+        resource = cls(
+            protocol_info=protocol_info,
+            uri=uri,
+            duration=duration,
+            size=size
+        )
+        
+        return resource
 
     def to_xml_lines(self, indent=""):
         """
@@ -784,7 +813,7 @@ def parse_didl_lite_packet(content, namespaces=DIDL_NAMESPACES):
 
         obj_items.append(obj)
 
-    return
+    return obj_items
 
 
 EXAMPLE_DIDL_PACKET = """

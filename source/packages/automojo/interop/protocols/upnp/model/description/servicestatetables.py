@@ -46,15 +46,23 @@ def process_state_table(service_state_table_el: Element, namespaces: Optional[di
         dataType = dataTypeNode.text
 
         varInfo = { "name": name, "dataType": dataType}
+        
+        # According to UPnP spec, sendEvents defaults to "yes" if not specified
+        sendEvents = "yes"
+        if "sendEvents" in state_variable_el.attrib:
+            sendEvents_attr = state_variable_el.attrib["sendEvents"].lower()
+            if sendEvents_attr in ("yes", "no"):
+                sendEvents = sendEvents_attr
+            else:
+                raise ValueError(f"State variable '{name}' has invalid 'sendEvents' attribute value: '{state_variable_el.attrib['sendEvents']}'. Must be 'yes' or 'no' (case-insensitive).")
+        
+        # Add sendEvents information to varInfo for consistency
+        varInfo["sendEvents"] = sendEvents
+        
         if name.startswith("A_ARG_TYPE_"):
             typesTable[name] = varInfo
         else:
             variablesTable[name] = varInfo
-
-            # According to UPnP spec, sendEvents defaults to "yes" if not specified
-            sendEvents = "yes"
-            if "sendEvents" in state_variable_el.attrib:
-                sendEvents = state_variable_el.attrib["sendEvents"]
 
             if sendEvents == "yes":
                 eventsTable[name] = varInfo
@@ -69,9 +77,13 @@ class ServiceVariableDesc:
         This class is used to represent a state variable in a UPnP service description. It can be extended to include methods for manipulating state variables.
     """
     
-    def __init__(self, *, name: str, dataType: str, sendEvents: bool = False):
+    def __init__(self, *, name: str, dataType: str, sendEvents: str = "no"):
         """
             Create a :class:`ServiceVariableDesc` instance.
+
+            :param name: The name of the state variable.
+            :param dataType: The data type of the state variable.
+            :param sendEvents: Whether the variable sends events ("yes" or "no"). Defaults to "no".
         """
 
         self.name = name

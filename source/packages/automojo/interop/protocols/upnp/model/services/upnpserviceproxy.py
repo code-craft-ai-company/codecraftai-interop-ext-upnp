@@ -546,6 +546,9 @@ class UpnpServiceProxy(EventedVariableSink):
         """
 
         device: "UpnpDeviceBase" = device_ref()
+        
+        if device is None:
+            raise RuntimeError("Cannot link service to device: device reference is no longer valid (device may have been garbage collected)")
 
         self._device_ref = device_ref
         self._service_description = service_description
@@ -608,8 +611,8 @@ class UpnpServiceProxy(EventedVariableSink):
             headers = {}
 
         call_url = self.controlURL
-        if self._baseURL is not None:
-            # Properly construct URL by ensuring single separator
+        if self._baseURL is not None and not self.controlURL.startswith(('http://', 'https://')):
+            # Only construct URL if controlURL is relative (not already absolute)
             base_url = self._baseURL.rstrip('/')
             control_url = call_url.lstrip('/')
             call_url = f"{base_url}/{control_url}"

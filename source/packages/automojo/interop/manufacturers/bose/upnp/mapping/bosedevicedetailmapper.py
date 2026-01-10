@@ -122,7 +122,7 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
 
     @classmethod
     def _create_embedded_device_desc(cls, root_el: Element, device_el: Element, namespaces: Dict[str, str], specVersion: SpecVersion,
-                                   params: Dict[str, Any]) -> EmbeddedDeviceDesc:
+                                   locationURL: str, params: Dict[str, Any]) -> EmbeddedDeviceDesc:
         """
             Creates an :class:`EmbeddedDeviceDesc` for a Bose embedded device.
 
@@ -168,7 +168,7 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
                 params['multi_room'] = BoseDeviceDetailMapper.process_device_multiroom_versions(child_el, all_namespaces)
 
         try:
-            device = BoseEmbeddedDeviceDetail(specVersion=specVersion, locationURL=None, **params)
+            device = BoseEmbeddedDeviceDetail(specVersion=specVersion, locationURL=locationURL, **params)
         except Exception as err:
             err_msg = f"Error creating Bose embedded device description: {err}"
             raise RuntimeError(err_msg) from err
@@ -186,8 +186,7 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
             :returns: A :class:`BoseMultiRoomVersions` instance.
         """
 
-        bmrv = None
-
+        # Initialize with None, only create BoseFeatureVersion objects when valid data is found
         audio_control_ver = None
         audio_payload_ver = None
         clock_sync_ver = None
@@ -214,7 +213,7 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
         if next_ver_el is not None:
             nowplaying_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
         
-        next_ver_el = multiroom_el.find("./bose:PlaybackRequest_Version", namespaces=namespaces)
+        next_ver_el = multiroom_el.find("./PlaybackRequest_Version", namespaces=namespaces)
         if next_ver_el is not None:
             playback_request_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
         
@@ -245,14 +244,18 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
         next_el = version_el.find("./major_version", namespaces=namespaces)
         if next_el is not None and next_el.text is not None:
             try:
-                major = int(next_el.text.strip())
+                text_value = next_el.text.strip()
+                if text_value:  # Only attempt conversion if not empty after stripping
+                    major = int(text_value)
             except ValueError:
                 major = None
         
         next_el = version_el.find("./minor_version", namespaces=namespaces)
         if next_el is not None and next_el.text is not None:
             try:
-                minor = int(next_el.text.strip())
+                text_value = next_el.text.strip()
+                if text_value:  # Only attempt conversion if not empty after stripping
+                    minor = int(text_value)
             except ValueError:
                 minor = None
         

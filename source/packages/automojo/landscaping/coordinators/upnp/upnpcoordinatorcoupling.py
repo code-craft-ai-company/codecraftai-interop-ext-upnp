@@ -204,8 +204,10 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
                 raise SemanticError("we should not have been called if the upnp device config had 0 devices.") from None
 
             required_devices = None
+            required_device_hints = []
             if not allow_missing_devices:
-                required_devices = [UpnpDeviceHint(identifier) for identifier in cls.lookup_upnp_device_config.keys()]
+                required_device_hints = [UpnpDeviceHint(identifier) for identifier in cls.lookup_upnp_device_config.keys()]
+                required_devices = required_device_hints
 
             cls.upnp_presence.start(exclude_interfaces=exclude_interfaces)
 
@@ -217,7 +219,14 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
 
             missing_devices = []
             for identifier in cls.lookup_upnp_device_config.keys():
-                if identifier not in matching_devices:
+                # Check if any of the device hints match this identifier
+                device_found = False
+                for hint in required_device_hints:
+                    if hint in matching_devices and hint.get_hint() == identifier:
+                        device_found = True
+                        break
+                
+                if not device_found:
                     missing_devices.append(identifier)
 
             conn_results = {
@@ -265,10 +274,11 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
         """
             Checkin a device to the device pool.
         """
-        usn = codev["USN"]
+        usn = codev.USN
 
         if usn in self.upnp_devices_inuse:
-            codev = self.upnp_devices_inuse.pop(usn)
+            # Remove the device from the in-use pool and put the original device back in the available pool
+            self.upnp_devices_inuse.pop(usn)
             self.upnp_devices_pool[usn] = codev
 
         return

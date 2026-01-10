@@ -35,49 +35,50 @@ class UpnpEmbeddedDevice(UpnpDeviceBase):
                                         This parameter is required as embedded devices are always created
                                         from actual device descriptions.
         """
-        # Embedded devices inherit evidence from their parent device, but we need to initialize
-        # with the embedded device description. Since we don't have evidence at construction time,
-        # we'll initialize manually and set evidence later via update_description.
+        # Validate required parameter
+        if embedded_device_desc is None:
+            raise ValueError("embedded_device_desc parameter is required and cannot be None")
         
-        # Call parent constructor first with None device_detail since embedded devices
-        # inherit evidence from their parent device
-        super().__init__(device_detail=None)
+        # Embedded devices need special handling since they don't have their own device_detail
+        # at construction time. We need to create a minimal device_detail to satisfy the parent constructor.
+        from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
+        from automojo.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
         
-        # Initialize core attributes
-        self._device_detail = None  # Will be set when evidence is available
-        self._device_description = embedded_device_desc
-        self._device_evidence = None  # Will be set when linked to parent
+        # Validate that embedded_device_desc has required UDN attribute
+        if not hasattr(embedded_device_desc, 'UDN') or embedded_device_desc.UDN is None:
+            raise ValueError("embedded_device_desc must have a valid UDN attribute")
         
-        # Set manufacturer info from description
-        self.MANUFACTURER = "unknown"
-        self.MODEL_NUMBER = "unknown" 
-        self.MODEL_DESCRIPTION = "unknown"
+        # Create a minimal device evidence for embedded devices
+        # Embedded devices don't have their own network presence, so we create placeholder evidence
+        temp_evidence = DeviceEvidence(
+            usn=f"uuid:{embedded_device_desc.UDN}::upnp:rootdevice",
+            status="embedded",  # Special status for embedded devices
+            server="Embedded/1.0",
+            location="embedded://localhost/embedded",  # Placeholder location
+            ip="127.0.0.1",  # Placeholder IP
+            other={},
+            presence=None  # Embedded devices don't have their own presence
+        )
         
-        if embedded_device_desc.manufacturer is not None:
-            self.MANUFACTURER = embedded_device_desc.manufacturer
+        # Create a device detail with the minimal evidence
+        temp_device_detail = UpnpDeviceDetail(embedded_device_desc, temp_evidence)
         
-        if embedded_device_desc.modelNumber is not None:
-            self.MODEL_NUMBER = embedded_device_desc.modelNumber
-
-        if embedded_device_desc.modelDescription is not None:
-            self.MODEL_DESCRIPTION = embedded_device_desc.modelDescription
-
-        self._host = None
-        self._urlBase = None
-        self._device_lock = threading.RLock()
-        self._embedded_devices = {}
-        self._services = {}
+        # Call parent constructor with the device detail
+        super().__init__(device_detail=temp_device_detail)
         
-        # Initialize service and device description tables like UpnpDeviceBase does
-        # Clear any existing entries from parent and populate with embedded device data
-        self._service_descriptions.clear()
+        # The parent constructor will have set up the basic structure, but we need to
+        # override some attributes specific to embedded devices
+        
+        # Clear and repopulate service descriptions with embedded device data
+        self._service_descriptions = {}
         serviceList = embedded_device_desc.serviceList
         if serviceList is not None:
             for serviceInfo in serviceList:
                 svckey = serviceInfo.get_extension_key()
                 self._service_descriptions[svckey] = serviceInfo
 
-        self._embedded_device_descriptions.clear()
+        # Clear and repopulate embedded device descriptions
+        self._embedded_device_descriptions = {}
         deviceList = embedded_device_desc.deviceList
         if deviceList is not None:
             for deviceInfo in deviceList:

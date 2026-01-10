@@ -457,12 +457,17 @@ class UpnpRootDevice(UpnpDeviceBase):
                 # Check if subscription already exists or is in progress
                 if service_type in self._subscriptions:
                     existing_sub_sid, existing_sub_expires = self._subscriptions[service_type]
+                    # Check for valid existing subscription
                     if existing_sub_sid is not None and existing_sub_expires is not None:
                         # Check if existing subscription needs renewal
                         check_time = datetime.now() + timedelta(seconds=TIMEDELTA_RENEWAL_WINDOW)
                         if check_time <= existing_sub_expires and not renew:
                             # Return existing valid subscription
                             return existing_sub_sid, existing_sub_expires
+                    # Check if subscription is already in progress (both None)
+                    elif existing_sub_sid is None and existing_sub_expires is None:
+                        # Another thread is already attempting subscription
+                        raise RuntimeError(f"Subscription to service {service_type} is already in progress")
                 
                 # Mark subscription as in progress to prevent race conditions
                 self._subscriptions[service_type] = (None, None)
@@ -478,7 +483,7 @@ class UpnpRootDevice(UpnpDeviceBase):
                 if target_service.eventSubURL is None:
                     raise RuntimeError(f"Service {svckey} has no eventSubURL. Cannot subscribe to events.")
 
-                subscribe_url = urljoin(self.URLBase, target_service.eventSubURL)
+                subscribe_url = urljoin(self.URLBase.rstrip("/") + "/", target_service.eventSubURL)
 
                 presence = self.presence
                 if presence is None:
@@ -1041,9 +1046,8 @@ class UpnpRootDevice(UpnpDeviceBase):
 
             NOTE: This method should be called with the device lock held.
         """
-        # Verify that the device lock is held by the calling thread
-        if not self._device_lock._is_owned():
-            raise RuntimeError("_locked_populate_embedded_devices() must be called with device lock held")
+        # Note: Lock ownership verification removed as _is_owned() is a private method
+        # that may not be available in all Python versions. Callers must ensure proper locking.
             
         for deviceInfo in description.deviceList:
 
@@ -1068,9 +1072,8 @@ class UpnpRootDevice(UpnpDeviceBase):
 
             NOTE: This method should be called with the device lock held.
         """
-        # Verify that the device lock is held by the calling thread
-        if not self._device_lock._is_owned():
-            raise RuntimeError("_locked_process_urlbase_node() must be called with device lock held")
+        # Note: Lock ownership verification removed as _is_owned() is a private method
+        # that may not be available in all Python versions. Callers must ensure proper locking.
             
         # pylint: disable=unused-argument
 

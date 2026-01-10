@@ -171,6 +171,15 @@ class UpnpDeviceFactory:
         """
         serviceInst = None
 
+        # Validate that device_ref is not None
+        if device_ref is None:
+            raise ValueError("device_ref parameter cannot be None")
+            
+        # Check if the device reference is still valid
+        device = device_ref()
+        if device is None:
+            raise ValueError("device_ref is invalid - the referenced device is no longer available (may have been garbage collected)")
+
         extkey = service_desc.get_extension_key()
         serviceClass = None
         
@@ -180,7 +189,6 @@ class UpnpDeviceFactory:
             serviceClass = self._std_service_registry[extkey]
         
         if serviceClass is not None:
-            temp_service_inst = None
             try:
                 # Create the service instance
                 temp_service_inst = serviceClass()
@@ -197,23 +205,12 @@ class UpnpDeviceFactory:
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.error(
-                    "Failed to create service instance for extension key '%s': %s", 
+                    "Failed to create or link service instance for extension key '%s': %s", 
                     extkey, str(ex), exc_info=True
                 )
                 
-                # Properly clean up the partially created service instance if it exists
-                if temp_service_inst is not None:
-                    try:
-                        # Attempt to clean up any resources that may have been initialized
-                        if hasattr(temp_service_inst, 'invalidate_subscription'):
-                            temp_service_inst.invalidate_subscription()
-                    except Exception as cleanup_ex:
-                        logger.warning(
-                            "Failed to clean up partially created service instance: %s", 
-                            str(cleanup_ex)
-                        )
-                
-                # Ensure we return None to indicate failure
+                # No cleanup needed since we don't return partially initialized services
+                # The service instance will be garbage collected automatically
                 serviceInst = None
 
         return serviceInst
@@ -230,6 +227,12 @@ class UpnpDeviceFactory:
 
             :returns: An instance of UpnpDeviceDetail containing the device description and evidence.
         """
+        # Validate required parameters
+        if device_desc is None:
+            raise ValueError("device_desc parameter cannot be None")
+        if evidence is None:
+            raise ValueError("evidence parameter cannot be None")
+            
         # UpnpDeviceDetail is not extensible like device classes, so we always return the base class
         return UpnpDeviceDetail(device_desc, evidence)
 

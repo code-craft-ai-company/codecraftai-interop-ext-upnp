@@ -16,6 +16,6 @@ class BoseDeviceClassGenerator(UpnpDeviceClassGenerator):
 
     @classmethod
     def generate_device_class(cls, description: str) -> str:
-        return
+        raise NotImplementedError(f"Device class generation is not yet implemented for {cls.__name__}")
     
 

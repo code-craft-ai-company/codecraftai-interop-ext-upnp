@@ -49,8 +49,7 @@ class UpnpErrorCodes(Enum):
         An enumeration of the standard UPnP error codes
     """
     InvalidAction = 401
-    InvalidArgs = 402  # Fixed: Use standard UPnP error code name
-    ActionNotAuthorized = 403  # Fixed: This should be 403 per UPnP spec, not deprecated
+    InvalidArgs = 402
     ActionFailed = 501
     ArgumentValueInvalid = 600
     ArgumentValueOutOfRange = 601
@@ -58,12 +57,12 @@ class UpnpErrorCodes(Enum):
     OutOfMemory = 603
     HumanInterventionRequired = 604
     StringArgumentTooLong = 605
-    SignatureFailure = 606  # Fixed: Moved to correct code 606
-    SignatureMissing = 607  # Fixed: Moved to correct code 607
-    NotEncrypted = 608  # Fixed: Moved to correct code 608
-    InvalidSequence = 609  # Fixed: Moved to correct code 609
-    InvalidControlURL = 610  # Fixed: Moved to correct code 610
-    NoSuchSession = 611  # Fixed: Moved to correct code 611
+    SignatureFailure = 606
+    SignatureMissing = 607
+    NotEncrypted = 608
+    InvalidSequence = 609
+    InvalidControlURL = 610
+    NoSuchSession = 611
 
 
 UPNP_ERROR_TEST_LOOKUP = {

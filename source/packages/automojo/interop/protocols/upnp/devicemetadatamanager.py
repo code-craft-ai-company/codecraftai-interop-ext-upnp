@@ -82,7 +82,7 @@ class DeviceMetadataManager:
                         mapper = self._mapper_registry.lookup_device_detail_mapper_safe(manufacturer)
                         
                         if mapper is not None:
-                            device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=desc_filename)
+                            device_desc = mapper.create_root_device_description(root_el, default_namespaces, spec_ver, locationURL=None)
                         else:
                             # No specific mapper found for this manufacturer, log and skip
                             logger.warning("No device detail mapper found for manufacturer '%s'. Skipping device description processing.", manufacturer)
@@ -127,15 +127,15 @@ class DeviceMetadataManager:
             service_dir = os.path.join(self._metadata_cache_services, service_agency)
             service_desc_filename = os.path.join(service_dir, f"{service_name}.xml")
 
-        desc_content = None
+        service_desc = None
 
         if os.path.exists(service_desc_filename):
             try:
-                desc_content = ServiceDesc.load_service_description(service_desc_filename)
+                service_desc = ServiceDesc.load_service_description(service_desc_filename)
             except (ValueError, FileNotFoundError) as load_err:
                 logger.error(f"Error loading service description from '{service_desc_filename}': {load_err}")
                 return None
         else:
             logger.warning(f"Service description file not found: {service_desc_filename}")
 
-        return desc_content
+        return service_desc

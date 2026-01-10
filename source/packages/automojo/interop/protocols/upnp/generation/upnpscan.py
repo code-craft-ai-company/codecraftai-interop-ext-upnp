@@ -20,10 +20,15 @@ def pull_device_description(device_scan_directory: str, device_name: str, device
         :param device_desc: The device description reported by the UPnP discovery process.
     """
     
-    try:
-        device_ext_dir = os.path.join(device_scan_directory, device_desc.manufacturer)
-        if not os.path.exists(device_ext_dir):
+    # Create directory structure first - fail fast if this cannot be done
+    device_ext_dir = os.path.join(device_scan_directory, device_desc.manufacturer)
+    if not os.path.exists(device_ext_dir):
+        try:
             os.makedirs(device_ext_dir)
+        except (IOError, OSError) as ex:
+            raise RuntimeError(f"Failed to create device scan directory '{device_ext_dir}': {ex}")
+    
+    try:
 
         device_desc_file = os.path.join(device_ext_dir, f"{device_name}.xml")
         
@@ -61,15 +66,24 @@ def pull_service_description(service_scan_directory: str, device_desc: Basic1Dev
     """
     service_type = service_evidence.serviceType
 
-    service_agency, service_name = parse_service_type(service_type)
+    try:
+        service_agency, service_name = parse_service_type(service_type)
+    except ValueError as parse_err:
+        print(f"Warning: Failed to parse service type '{service_type}': {parse_err}")
+        return
+    
+    # Create directory structure first - fail fast if this cannot be done
+    service_dir = os.path.join(service_scan_directory, service_agency)
+    if not os.path.exists(service_dir):
+        try:
+            os.makedirs(service_dir)
+        except (IOError, OSError) as ex:
+            raise RuntimeError(f"Failed to create service scan directory '{service_dir}': {ex}")
     
     # Initialize service_desc_url to avoid NameError in exception handlers
     service_desc_url = "unknown"
 
     try:
-        service_dir = os.path.join(service_scan_directory, service_agency)
-        if not os.path.exists(service_dir):
-            os.makedirs(service_dir)
 
         service_desc_filename = os.path.join(service_dir, f"{service_name.lower()}.xml")
 
@@ -78,9 +92,27 @@ def pull_service_description(service_scan_directory: str, device_desc: Basic1Dev
             if base_url is None:
                 print(f"Warning: Device {device_desc.friendlyName} has no baseURL, skipping service description for {service_name}")
                 return
+            
+            scpd_url = service_evidence.SCPDURL
+            
+            # Validate SCPDURL is not None or empty
+            if not scpd_url:
+                print(f"Warning: Service {service_name} has no SCPDURL, skipping service description")
+                return
+            
+            # Check if SCPDURL is already an absolute URL
+            if scpd_url.startswith(('http://', 'https://')):
+                service_desc_url = scpd_url
+            else:
+                # Construct relative URL
+                base_url = base_url.rstrip("/")
                 
-            base_url = base_url.rstrip("/")
-            service_desc_url = f"{base_url}/{service_evidence.SCPDURL.lstrip('/')}"
+                # Handle root path case - if scpd_url is just "/" or becomes empty after lstrip
+                if scpd_url == "/" or scpd_url.strip("/") == "":
+                    service_desc_url = f"{base_url}/"
+                else:
+                    scpd_url_clean = scpd_url.lstrip('/')
+                    service_desc_url = f"{base_url}/{scpd_url_clean}"
 
             resp: requests.Response = requests.get(service_desc_url, timeout=30)
             resp.raise_for_status()  # Raises HTTPError for bad HTTP status codes

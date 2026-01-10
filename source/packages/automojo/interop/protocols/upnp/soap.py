@@ -287,8 +287,8 @@ class SoapProcessor:
         # Sometimes devices return XML strings as their argument values without escaping them with
         # CDATA. This checks to see if the argument has been parsed as XML and un-parses it if so.
         resp_dict = {}
-        for arg in resp_body.getchildren():
-            children = arg.getchildren()
+        for arg in resp_body:
+            children = list(arg)
             if children:
                 resp_dict[arg.tag] = "\n".join(xml_tostring(x) for x in children)
             else:
