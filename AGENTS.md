@@ -20,7 +20,7 @@ AI based testing should run only the 'singlehost' tests tests with:
 ```
     source .venv/bin/activate
     
-    testbase testing run --root source/testroots/automojo --includes=automojo.tests.singlehost --output=<desired output folder>
+    testbase testing run --root source/testroots/automojo --includes=automojo.tests.singlehost --output=./.output
 ```
 
 When running tests you should create an output folder in order to be able to capture all the test run artifacts in an isolated folder.
