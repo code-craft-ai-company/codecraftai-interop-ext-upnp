@@ -83,6 +83,9 @@ def remove_extraneous_xml_declarations(xml_str):
     """
         Special method for correcting XML content that has an extra XML declaration.
     """
+    if isinstance(xml_str, bytes):
+        xml_str = xml_str.decode('utf-8', errors='replace')
+
     xml_declaration = ''
     if xml_str.startswith('<?xml'):
         parts = xml_str.split('?>', maxsplit=1)

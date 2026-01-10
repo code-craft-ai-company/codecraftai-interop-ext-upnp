@@ -1281,6 +1281,7 @@ class UpnpPresence:
         message_length = None
         read_so_far = 0
         remaining_length = 1024
+        max_header_size = 8192
         
         try:
             # Read To Header
@@ -1297,6 +1298,10 @@ class UpnpPresence:
                 cbbuffer.write(nxtbuff)
 
                 if req_headers is None:
+                    if read_so_far > max_header_size:
+                        logger.error("Callback message header exceeded max size. svc_addr=%s", svc_addr)
+                        return
+
                     current_content = cbbuffer.getvalue()
                     header_end = current_content.find(HTTP1_1_END_OF_HEADER)
                     if header_end > -1:
@@ -1449,7 +1454,7 @@ class UpnpPresence:
             sock = self._get_search_socket()
 
             try:
-                resp, addr = sock.recvfrom(1024)
+                resp, addr = sock.recvfrom(4096)
 
                 if resp.startswith(b"HTTP/"):
                     self.process_msearch_reply(addr, resp)
@@ -1488,7 +1493,7 @@ class UpnpPresence:
             sock = self._get_presence_socket(ifname)
 
             try:
-                msg_in, addr = sock.recvfrom(1024)
+                msg_in, addr = sock.recvfrom(4096)
 
                 if msg_in.startswith(b"M-SEARCH * HTTP/"):
                     self.process_msearch(ifname, addr, msg_in)
