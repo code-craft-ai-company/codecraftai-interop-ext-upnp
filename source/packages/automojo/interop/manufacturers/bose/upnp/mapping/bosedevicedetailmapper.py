@@ -197,27 +197,27 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
         # Bose BUG: There is a bug in the Bose specific device description content.  The base elements specific to bose are
         # in a 'bose' namespace, but the child elements are in the default namespace.  Not the 'bose' namespace.
 
-        next_ver_el = multiroom_el.find("./AudioControl_Protocol_Version", namespaces=namespaces)
+        next_ver_el = cls._find_child_any_namespace(multiroom_el, "AudioControl_Protocol_Version")
         if next_ver_el is not None:
             audio_control_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
         
-        next_ver_el = multiroom_el.find("./ClockSync_Protocol_Version", namespaces=namespaces)
+        next_ver_el = cls._find_child_any_namespace(multiroom_el, "ClockSync_Protocol_Version")
         if next_ver_el is not None:
             clock_sync_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
         
-        next_ver_el = multiroom_el.find("./Audio_Payload_Version", namespaces=namespaces)
+        next_ver_el = cls._find_child_any_namespace(multiroom_el, "Audio_Payload_Version")
         if next_ver_el is not None:
             audio_payload_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
 
-        next_ver_el = multiroom_el.find("./NowPlaying_Version", namespaces=namespaces)
+        next_ver_el = cls._find_child_any_namespace(multiroom_el, "NowPlaying_Version")
         if next_ver_el is not None:
             nowplaying_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
         
-        next_ver_el = multiroom_el.find("./PlaybackRequest_Version", namespaces=namespaces)
+        next_ver_el = cls._find_child_any_namespace(multiroom_el, "PlaybackRequest_Version")
         if next_ver_el is not None:
             playback_request_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
         
-        next_ver_el = multiroom_el.find("./ZoneControl_Version", namespaces=namespaces)
+        next_ver_el = cls._find_child_any_namespace(multiroom_el, "ZoneControl_Version")
         if next_ver_el is not None:
             zonecontrol_ver = BoseDeviceDetailMapper.process_bose_feature_version(next_ver_el, namespaces=namespaces)
         
@@ -241,7 +241,7 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
         major = None
         minor = None
 
-        next_el = version_el.find("./major_version", namespaces=namespaces)
+        next_el = cls._find_child_any_namespace(version_el, "major_version")
         if next_el is not None and next_el.text is not None:
             try:
                 text_value = next_el.text.strip()
@@ -250,7 +250,7 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
             except ValueError:
                 major = None
         
-        next_el = version_el.find("./minor_version", namespaces=namespaces)
+        next_el = cls._find_child_any_namespace(version_el, "minor_version")
         if next_el is not None and next_el.text is not None:
             try:
                 text_value = next_el.text.strip()
@@ -262,3 +262,16 @@ class BoseDeviceDetailMapper(DeviceDetailMapper):
         verobj = BoseFeatureVersion(major, minor)
 
         return verobj
+
+    @classmethod
+    def _find_child_any_namespace(cls, parent_el: Element, tag: str) -> Optional[Element]:
+        """
+            Finds a child element by tag name regardless of namespace.
+
+            :param parent_el: Parent XML element to search.
+            :param tag: Tag name to match.
+
+            :returns: Matching XML element or None.
+        """
+
+        return parent_el.find(f"./{{*}}{tag}")
