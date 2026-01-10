@@ -189,9 +189,9 @@ class UpnpDeviceBase:
         # service descriptions table.  We also populate the embedded device descriptions table.
         self._populate_services_descriptions(self._device_description)
 
-        for device_desc in self._device_description.deviceList:
-
-            self._populate_embedded_device_descriptions(factory, device_desc)
+        if self._device_description.deviceList is not None:
+            for device_desc in self._device_description.deviceList:
+                self._populate_embedded_device_descriptions(factory, device_desc)
 
         return
 
@@ -331,6 +331,9 @@ class UpnpDeviceBase:
         """
 
         service_descriptions = {}
+
+        if device_description.serviceList is None:
+            return
 
         # pylint: disable=protected-access
         for serviceInfo in device_description.serviceList:
