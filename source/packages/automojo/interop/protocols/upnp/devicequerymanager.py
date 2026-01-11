@@ -76,8 +76,8 @@ class DeviceQueryManager:
 
             try:
                 default_namespaces = {"": UPNP_DEVICE1_NAMESPACE}
-                xml_content = resp.content.decode("utf-8")
-                root_el = parse_xml_content(xml_content)
+                # Pass content as bytes to allow ElementTree to handle encoding from XML declaration
+                root_el = parse_xml_content(resp.content)
                 
                 spec_ver, manufacturer = DeviceDetailMapper.read_spec_version_and_manufacturer(root_el, default_namespaces)
                 

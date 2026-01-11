@@ -417,28 +417,32 @@ class UpnpPresence:
 
             # Determine if we can set the interface for the multicast packet
             ifaddr = get_ipv4_address(ifname)
-            if ifaddr:
-                try:
-                    # IP_MULTICAST_IF expects 4-byte IP address in network byte order
-                    # However, python socket.setsockopt can take a string IP address for IP_MULTICAST_IF on some platforms
-                    # or an interface index. It's platform dependent.
-                    # A safer way to send on a specific interface for multicast with a single socket (if bound to 0.0.0.0)
-                    # is to use IP_MULTICAST_IF.
 
-                    # On Linux/Unix, it often takes struct ip_mreq or just the IP string.
-                    # socket.inet_aton(ifaddr) converts IP string to packed 4-byte string.
-
-                    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(ifaddr))
-                except Exception as ex:
-                    logger.debug(f"Failed to set IP_MULTICAST_IF for interface {ifname}: {ex}")
-
+            # Acquire lock to ensure atomic setting of interface and sending
+            self._lock.acquire()
             try:
-                sock.sendto(msearch_msg, (self._multicast_address, self._multicast_port))
-            except OSError as serr:
-                # If we get an OSError while sending, our socket is likely invalid and we need
-                # to force the socket to be re-freshed
-                self._lock.acquire()
+                if ifaddr:
+                    try:
+                        # IP_MULTICAST_IF expects 4-byte IP address in network byte order
+                        # However, python socket.setsockopt can take a string IP address for IP_MULTICAST_IF on some platforms
+                        # or an interface index. It's platform dependent.
+                        # A safer way to send on a specific interface for multicast with a single socket (if bound to 0.0.0.0)
+                        # is to use IP_MULTICAST_IF.
+
+                        # On Linux/Unix, it often takes struct ip_mreq or just the IP string.
+                        # socket.inet_aton(ifaddr) converts IP string to packed 4-byte string.
+
+                        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(ifaddr))
+                    except Exception as ex:
+                        logger.debug(f"Failed to set IP_MULTICAST_IF for interface {ifname}: {ex}")
+
                 try:
+                    sock.sendto(msearch_msg, (self._multicast_address, self._multicast_port))
+                except OSError as serr:
+                    # If we get an OSError while sending, our socket is likely invalid and we need
+                    # to force the socket to be re-freshed
+                    # We are already holding the lock
+
                     # Close the socket we were using if it's still the current socket
                     if self._msearch_sock is sock:
                         try:
@@ -452,9 +456,9 @@ class UpnpPresence:
                             sock.close()
                         except Exception:
                             pass  # Ignore errors when closing socket
-                finally:
-                    self._lock.release()
-                raise
+                    raise
+            finally:
+                self._lock.release()
 
         return disco_window
 
@@ -1219,8 +1223,8 @@ class UpnpPresence:
                         # Get the ephimeral port assigned to our callback socket
                         _, port = temp_sock.getsockname()
 
-                        # Listen with a small backlog of 1
-                        temp_sock.listen(1)
+                        # Listen with a larger backlog to handle bursts
+                        temp_sock.listen(5)
 
                         callback_addr = (ifaddr, port)
 
@@ -1446,6 +1450,25 @@ class UpnpPresence:
                 dbgmsg = "Our socket timed out.  Don't do anything except loop around and call accept again."
                 logger.debug(dbgmsg)
 
+            except OSError:
+                if not self._running:
+                    # If we are not running, then the socket was likely closed by stop()
+                    break
+                logger.exception(
+                    "Unexpected OSError in callback thread for %s.",
+                    ifname,
+                )
+                self._lock.acquire()
+                try:
+                    if sock is not None:
+                        sock.close()
+
+                    self._callback_sockets.pop(ifname, None)
+                finally:
+                    self._lock.release()
+                sock = None
+                continue
+
             except Exception as xcpt:
                 err_type = type(xcpt).__name__
                 logger.exception(
@@ -1502,6 +1525,10 @@ class UpnpPresence:
                 pass
 
             except OSError:
+                if not self._running:
+                    # If we are not running, then the socket was likely closed by stop()
+                    break
+
                 self._lock.acquire()
                 try:
                     if sock is not None:
@@ -1542,6 +1569,23 @@ class UpnpPresence:
 
             except socket.timeout:
                 pass
+
+            except OSError:
+                if not self._running:
+                    # If we are not running, then the socket was likely closed by stop()
+                    break
+                logger.exception(
+                    "Unexpected OSError in presence thread for %s.",
+                    ifname,
+                )
+                self._lock.acquire()
+                try:
+                    if sock is not None:
+                        sock.close()
+
+                    self._presence_sockets.pop(ifname, None)
+                finally:
+                    self._lock.release()
 
             except Exception as xcpt:
                 err_type = type(xcpt).__name__
