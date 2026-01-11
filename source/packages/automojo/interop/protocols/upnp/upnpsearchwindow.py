@@ -239,7 +239,7 @@ class UpnpSearchWindow:
                         if nxt_hint.matches(device):
                             # Store the matched device for later atomic update
                             matched_hints.append(nxt_hint)
-                            matched_devices[nxt_hint.get_hint()] = device
+                            matched_devices[device.usn] = device
                             used_devices.add(device_id)  # Mark this device as used
                             break  # Found a match for this hint, move to next hint
 

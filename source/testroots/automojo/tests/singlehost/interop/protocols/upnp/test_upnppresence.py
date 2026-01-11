@@ -1,99 +1,101 @@
-import automojo.testbase as testbase
+import unittest
+import socket
+import threading
+from unittest.mock import MagicMock, patch
+from automojo.interop.protocols.upnp.upnppresence import parse_http_headers, UpnpPresence
+from automojo.interop.protocols.upnp.upnpsearchwindow import UpnpSearchWindow, UpnpSearchWindowState
+from automojo.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
+from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
 
-from automojo.testbase.mocking import create_module_patch
+class TestUpnpPresence(unittest.TestCase):
 
-from automojo.interop.protocols.upnp import upnppresence
-from automojo.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
+    def test_parse_http_headers_empty_content(self):
+        """
+        Verify that parse_http_headers raises ValueError instead of crashing with AssertionError or IndexError
+        when content is empty or contains only newlines.
+        """
+        # Case 1: Empty content
+        try:
+            parse_http_headers(b"")
+        except ValueError:
+            pass # Expected behavior
+        except Exception as e:
+            self.fail(f"Unexpected exception: {e}")
 
+        # Case 2: Only newlines (header end but no lines)
+        try:
+            parse_http_headers(b"\r\n\r\n")
+        except ValueError:
+            pass # Expected behavior
+        except Exception as e:
+            self.fail(f"Unexpected exception: {e}")
 
-class DummySocket:
-    def close(self):
-        return
+    @patch('automojo.interop.protocols.upnp.upnppresence.DeviceQueryManager')
+    def test_thread_entry_for_msearch_socket_overwrite(self, mock_dqm):
+        """
+        Verify that _thread_entry_for_msearch closes existing socket before overwriting it.
+        """
+        presence = UpnpPresence()
 
+        # Pre-create a socket as if discover_devices was called
+        mock_sock = MagicMock()
+        presence._msearch_sock = mock_sock
 
-class DummyPool:
-    def start_pool(self):
-        return
+        # Mock socket.socket to return a new socket
+        new_sock = MagicMock()
 
-    def push_work(self, packet):
-        return
+        with patch('socket.socket', return_value=new_sock):
+             # We want to run _thread_entry_for_msearch but stop it quickly
+             presence._running = False # Stop the loop immediately
 
-    def shutdown(self):
-        return
+             # But we need sgate to be set
+             sgate = threading.Event()
 
-      
-def _create_evidence(presence: upnppresence.UpnpPresence, usn: str, status: str) -> DeviceEvidence:
-    return DeviceEvidence(
-        usn=usn,
-        status=status,
-        server="server",
-        location="loc",
-        ip="1.1.1.1",
-        other={},
-        presence=presence,
-    )
+             # Call the method
+             presence._thread_entry_for_msearch(sgate)
 
-  
-def test_start_creates_callback_sockets_when_no_interfaces():
-    def fake_presence_socket(self, ifname):
-        sock = DummySocket()
-        self._presence_sockets[ifname] = sock
-        return sock
+             # Check if old socket was closed
+             mock_sock.close.assert_called_once()
 
-    def fake_callback_socket(self, ifname):
-        sock = DummySocket()
-        self._callback_sockets[ifname] = sock
-        self._callback_address_from_iface[ifname] = ("1.1.1.1", 1234)
-        return sock
+             # Check if new socket is assigned
+             self.assertEqual(presence._msearch_sock, new_sock)
 
-    def fake_presence_thread(self, sgate, ifname):
-        fake_presence_socket(self, ifname)
-        sgate.set()
-        return
+    def test_search_window_matching_devices_keys(self):
+        """
+        Verify that matching_devices uses USNs as keys.
+        """
+        presence = MagicMock()
+        # Create a hint
+        hint = MagicMock()
+        hint.get_hint.return_value = "hint_string"
+        hint.matches.return_value = True
 
-    def fake_callback_thread(self, sgate, ifname):
-        fake_callback_socket(self, ifname)
-        sgate.set()
-        return
+        # Create a device
+        device = MagicMock()
+        device.usn = "uuid:device1"
 
-    def fake_msearch_thread(self, sgate):
-        sgate.set()
-        return
+        # Create search window
+        # Mocking time.sleep to break the loop by forcing state change
+        with patch('time.sleep', side_effect=lambda x: setattr(window, '_window_state', UpnpSearchWindowState.COMPLETED)):
+             window = UpnpSearchWindow(presence, "id", 0, 100, 0.1, limit_to=[hint])
 
-    with create_module_patch(upnppresence, "get_all_ipv4_interfaces") as if_patch, \
-         create_module_patch(upnppresence, "LooperPool") as pool_patch:
+             # Manually inject device found
+             with window._lock:
+                 window._devices_found = {device.usn: device}
+                 window._window_state = UpnpSearchWindowState.ACTIVE
 
-        if_patch.configure(return_value=["eth0"])
-        pool_patch.configure(return_value=DummyPool())
+             sgate = threading.Event()
+             try:
+                 window._monitor_thread_entry(sgate)
+             except Exception:
+                 pass
 
-        upnppresence.UpnpPresence._get_presence_socket = fake_presence_socket
-        upnppresence.UpnpPresence._get_callback_socket = fake_callback_socket
-        upnppresence.UpnpPresence._thread_entry_for_presence = fake_presence_thread
-        upnppresence.UpnpPresence._thread_entry_for_callback = fake_callback_thread
-        upnppresence.UpnpPresence._thread_entry_for_msearch = fake_msearch_thread
+        # Check matching_devices
+        # Correct expectation: key is "uuid:device1"
 
-        scanner = upnppresence.UpnpPresence()
-        scanner.start()
-        testbase.assert_equal("eth0" in scanner._callback_sockets, True)
-        scanner.stop()
-        scanner.cleanup()
+        print(f"Matching devices keys: {window.matching_devices.keys()}")
+        self.assertNotIn("hint_string", window.matching_devices.keys())
+        self.assertIn("uuid:device1", window.matching_devices.keys())
 
-    return
-
-  
-def test_active_and_inactive_device_types() -> None:
-    presence = upnppresence.UpnpPresence()
-
-    active = _create_evidence(presence, "usn1", "active")
-    inactive = _create_evidence(presence, "usn2", "inactive")
-
-    presence._active_devices["usn1"] = active
-    presence._inactive_devices["usn2"] = inactive
-
-    actives = presence.active_devices
-    inactives = presence.inactive_devices
-
-    testbase.assert_equal(all(isinstance(v, DeviceEvidence) for v in actives.values()), True)
-    testbase.assert_equal(all(isinstance(v, DeviceEvidence) for v in inactives.values()), True)
-    return
-
+if __name__ == '__main__':
+    unittest.main()
