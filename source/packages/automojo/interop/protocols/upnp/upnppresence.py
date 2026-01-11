@@ -146,7 +146,9 @@ def parse_http_headers(header_content: bytes) -> Tuple[str, Dict[str, str]]:
     headers = {}
     header_lines = header_content.splitlines(False)
 
-    assert len(header_lines) > 0, "The header content was not a valid HTTP request header."
+    if not header_lines:
+        raise ValueError("The header content was not a valid HTTP request header.")
+
     req_line = header_lines[0]
     for hline in header_lines[1:]:
         name_end = hline.find(b":")
@@ -1371,6 +1373,9 @@ class UpnpPresence:
 
                 self.dispatch_subscription_event_callback(ifname, sid, svc_addr, req_headers, req_body)
 
+                # Send success response only after successful processing
+                accepted_sock.sendall(UPNP_SUBSCRIPTION_NOTIFY_RESPONSE_OK)
+
             else:
                 dbgmsg_lines = [
                     "Received subscription notification without an SID. svc_addr={}".format(svc_addr),
@@ -1387,8 +1392,15 @@ class UpnpPresence:
 
                 logger.debug(dbgmsg)
 
-            # Send success response only after successful processing
-            accepted_sock.sendall(UPNP_SUBSCRIPTION_NOTIFY_RESPONSE_OK)
+                # Send 412 Precondition Failed response
+                response_lines = [
+                    b"HTTP/1.1 412 Precondition Failed",
+                    b"Content-Length: 0",
+                    b"",
+                    b""
+                ]
+                response_msg = b"\r\n".join(response_lines)
+                accepted_sock.sendall(response_msg)
             
         except Exception as ex:
             logger.error("Error processing callback from %s: %s", svc_addr, str(ex))
@@ -1462,6 +1474,11 @@ class UpnpPresence:
 
         self._lock.acquire()
         try:
+            if self._msearch_sock is not None:
+                try:
+                    self._msearch_sock.close()
+                except Exception:
+                    pass
             self._msearch_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         finally:
             self._lock.release()
