@@ -30,6 +30,24 @@ DIDL_NAMESPACES = {
     "upnp": "urn:schemas-upnp-org:metadata-1-0/upnp/",
 }
 
+def _parse_restricted_value(restricted_value: str) -> bool:
+    """
+        Parse the ``restricted`` attribute string into a boolean.
+
+        :param restricted_value: Value of the restricted attribute.
+
+        :returns: ``True`` when restricted, otherwise ``False``.
+    """
+    normalized = restricted_value.strip().lower()
+    if normalized in ("1", "true", "yes"):
+        return True
+    if normalized in ("0", "false", "no"):
+        return False
+
+    raise ProtocolError(
+        f"DIDL message has an invalid 'restricted' attribute value '{restricted_value}'."
+    )
+
 
 class DidlDesc:
     """
@@ -181,7 +199,7 @@ class DidlObject:
         parent_id: str,
         restricted: bool,
         title: str,
-        res: DidlResource
+        res: Optional[DidlResource] = None
     ):
         """
             Initialize a new :class:`DidlObject` instance.
@@ -190,7 +208,7 @@ class DidlObject:
             :param parent_id: Identifier of the parent object.
             :param restricted: Indicates if the object is read-only.
             :param title: Title string for the object.
-            :param res: Resource associated with the object.
+            :param res: Resource associated with the object, if any.
         """
         self._oid = oid
         self._parent_id = parent_id
@@ -227,11 +245,11 @@ class DidlObject:
         return self._restricted
 
     @property
-    def res(self) -> DidlResource:
+    def res(self) -> Optional[DidlResource]:
         """
             Primary :class:`DidlResource` for this object.
 
-            :returns: The primary :class:`DidlResource` instance.
+            :returns: The primary :class:`DidlResource` instance, if present.
         """
         return self._res
 
@@ -370,6 +388,7 @@ class DidlContainerPhotoAlbum(DidlObject):
             restricted = obj_element.attrib["restricted"]
         except KeyError:
             raise ProtocolError("DIDL message for DidlContainerPhotoAlbum is missing required attribute 'restricted'.")
+        restricted = _parse_restricted_value(restricted)
 
         # Read the Required elements
         e_title = obj_element.find("dc:title", namespaces=namespaces)
@@ -459,6 +478,7 @@ class DidlContainerStorageFolder(DidlObject):
             restricted = obj_element.attrib["restricted"]
         except KeyError:
             raise ProtocolError("DIDL message for DidlContainerStorageFolder is missing required attribute 'restricted'.")
+        restricted = _parse_restricted_value(restricted)
 
         # Read the Required elements
         e_title = obj_element.find("dc:title", namespaces=namespaces)
@@ -525,12 +545,41 @@ class DidlItemAlbumArt(DidlObject):
             :returns: Instance of :class:`DidlItemAlbumArt`.
         """
 
-        # Read the Required attributes
-        oid = obj_element.attrib["id"]
-        parent_id = obj_element.attrib["parentID"]
-        restricted = obj_element.attrib["restricted"]
+        # Read the Required attributes with proper error handling
+        try:
+            oid = obj_element.attrib["id"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlItemAlbumArt is missing required attribute 'id'.")
+        
+        try:
+            parent_id = obj_element.attrib["parentID"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlItemAlbumArt is missing required attribute 'parentID'.")
+        
+        try:
+            restricted = obj_element.attrib["restricted"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlItemAlbumArt is missing required attribute 'restricted'.")
+        restricted = _parse_restricted_value(restricted)
 
-        obj = None
+        title = ""
+        e_title = obj_element.find("dc:title", namespaces=namespaces)
+        if e_title is not None and e_title.text is not None:
+            title = e_title.text
+
+        e_res = obj_element.find("res", namespaces=namespaces)
+        if e_res is None:
+            errmsg = "DIDL message for DidlItemAlbumArt is missing a required element 'res'."
+            raise ProtocolError(errmsg)
+        res = DidlResource.from_xml(e_res)
+
+        obj = DidlItemAlbumArt(
+            oid=oid,
+            parent_id=parent_id,
+            restricted=restricted,
+            title=title,
+            res=res,
+        )
         return obj
 
 
@@ -600,6 +649,7 @@ class DidlItemMusicTrack(DidlObject):
             restricted = obj_element.attrib["restricted"]
         except KeyError:
             raise ProtocolError("DIDL message for DidlItemMusicTrack is missing required attribute 'restricted'.")
+        restricted = _parse_restricted_value(restricted)
 
         # Read the Required elements
         e_title = obj_element.find("dc:title", namespaces=namespaces)
@@ -692,12 +742,49 @@ class DidlItemPhoto(DidlObject):
             :returns: Instance of :class:`DidlItemPhoto`.
         """
 
-        # Read the Required attributes
-        oid = obj_element.attrib["id"]
-        parent_id = obj_element.attrib["parentID"]
-        restricted = obj_element.attrib["restricted"]
+        # Read the Required attributes with proper error handling
+        try:
+            oid = obj_element.attrib["id"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlItemPhoto is missing required attribute 'id'.")
+        
+        try:
+            parent_id = obj_element.attrib["parentID"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlItemPhoto is missing required attribute 'parentID'.")
+        
+        try:
+            restricted = obj_element.attrib["restricted"]
+        except KeyError:
+            raise ProtocolError("DIDL message for DidlItemPhoto is missing required attribute 'restricted'.")
+        restricted = _parse_restricted_value(restricted)
 
-        obj = None
+        e_title = obj_element.find("dc:title", namespaces=namespaces)
+        if e_title is None or e_title.text is None:
+            errmsg = "DIDL message for DidlItemPhoto is missing a required element 'title'."
+            raise ProtocolError(errmsg)
+        title = e_title.text
+
+        e_date = obj_element.find("dc:date", namespaces=namespaces)
+        if e_date is None or e_date.text is None:
+            errmsg = "DIDL message for DidlItemPhoto is missing a required element 'date'."
+            raise ProtocolError(errmsg)
+        date = e_date.text
+
+        e_res = obj_element.find("res", namespaces=namespaces)
+        if e_res is None:
+            errmsg = "DIDL message for DidlItemPhoto is missing a required element 'res'."
+            raise ProtocolError(errmsg)
+        res = DidlResource.from_xml(e_res)
+
+        obj = DidlItemPhoto(
+            oid=oid,
+            parent_id=parent_id,
+            restricted=restricted,
+            title=title,
+            res=res,
+            date=date,
+        )
         return obj
 
 
