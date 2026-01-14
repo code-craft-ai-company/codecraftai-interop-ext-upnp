@@ -221,7 +221,7 @@ class SoapProcessor:
         action_name_tag_name = action_name + "Response"
         methElement = SubElement(body, action_name_tag_name)
         if encoding:
-            methElement.set(NS_SOAP_ENV + "encodingStyle", encoding)
+            methElement.set(f"{{{NS_SOAP_ENV}}}encodingStyle", encoding)
 
         if arguments:
             for arg_name, arg_val in arguments.items():
