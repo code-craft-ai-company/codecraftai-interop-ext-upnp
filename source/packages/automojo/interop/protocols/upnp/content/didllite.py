@@ -146,7 +146,7 @@ class DidlResource(NamedTuple):
 
         sizeattr = ""
         if self.size is not None:
-            sizeattr = " size='{}'"
+            sizeattr = " size='{}'".format(self.size)
 
         xlines = [
             "{}<res protocolInfo='{}'{}>".format(indent, self.protocol_info, sizeattr),
@@ -163,7 +163,7 @@ class DidlResource(NamedTuple):
 
         sizeattr = ""
         if self.size is not None:
-            sizeattr = " size='{}'"
+            sizeattr = " size='{}'".format(self.size)
 
         xstr = "<res protocolInfo='{}'{}>{}</res>".format(
             self.protocol_info, sizeattr, self.uri
