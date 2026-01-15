@@ -149,14 +149,20 @@ def parse_http_headers(header_content: bytes) -> Tuple[str, Dict[str, str]]:
     if not header_lines:
         raise ValueError("The header content was not a valid HTTP request header.")
 
-    req_line = header_lines[0]
+    try:
+        req_line = header_lines[0].decode("utf-8").strip()
+    except UnicodeDecodeError as e:
+        logger.error("Failed to decode HTTP request line as UTF-8: %s", e)
+        req_line = header_lines[0].decode("utf-8", errors="replace").strip()
+
     for hline in header_lines[1:]:
         name_end = hline.find(b":")
-        if name_end > -1:
+        if name_end > 0:
             try:
-                hname = hline[:name_end].upper().decode().strip()
+                hname = hline[:name_end].decode().strip().upper()
                 hval = hline[name_end + 1:].decode().strip()
-                headers[hname] = hval
+                if hname:
+                    headers[hname] = hval
             except UnicodeDecodeError as e:
                 logger.error("Failed to decode HTTP header as UTF-8: %s", e)
                 continue
