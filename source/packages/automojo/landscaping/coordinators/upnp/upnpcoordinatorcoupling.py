@@ -171,6 +171,8 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
             reports for devices devices based on the coordinator.
         """
         lscape = cls.landscape
+        conn_errors: List[str] = []
+        conn_results: dict = {}
 
         exclude_interfaces = ["lo"]
 
@@ -236,8 +238,6 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
                     "missing": missing_devices
                 }
             }
-
-            conn_errors = []
 
         return (conn_errors, conn_results)
 
