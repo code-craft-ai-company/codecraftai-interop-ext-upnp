@@ -160,7 +160,7 @@ When a test finishes it writes a result to the stream.  A test result will alway
 # Environment Setup
 
 ## Codex Container Setup
-When work is being done on this repository using the Codex web environment.  Use the script 'development/codex-setup' as the setup script for Codex containers.
+When work is being done on this repository using the Codex web environment.  Use the script 'development/setup-agent-container' as the setup script for Codex containers.
 
 ## Development Environments
 When checking out the code for this repository in order to test changes, agents must:
