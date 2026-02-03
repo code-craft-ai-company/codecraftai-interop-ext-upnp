@@ -167,12 +167,11 @@ class Basic1DeviceDesc:
 
 
     @property
-    def baseURL(self) -> str:
+    def baseURL(self) -> Optional[str]:
         """
             The base URL that should be used to make request for service and embedded device descriptions.
         """
-        rtnval = self._baseURL if self._baseURL is not None else ""
-        return rtnval
+        return self._baseURL
 
     @property
     def deviceType(self) -> str:
