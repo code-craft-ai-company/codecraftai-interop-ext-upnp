@@ -33,7 +33,7 @@ from requests.compat import urljoin
 
 from automojo.errors.exceptions import  ProtocolError
 
-from automojo.interop.protocols.upnp.constants import MSearchRouteKeys, UPNP_DEVICE1_NAMESPACE
+from automojo.interop.protocols.upnp.constants import MSearchKeys, MSearchRouteKeys, UPNP_DEVICE1_NAMESPACE
 from automojo.interop.protocols.upnp.upnperrors import UpnpError
 from automojo.interop.protocols.upnp.aliases import StrSvcId, StrSvcType
 from automojo.interop.protocols.upnp.constants import TIMEDELTA_RENEWAL_WINDOW, UPNP_HEADERS
@@ -649,6 +649,10 @@ class UpnpRootDevice(UpnpDeviceBase):
         self._location = location
         self._configinfo = configinfo
         self._deviceinfo = deviceinfo
+
+        if MSearchKeys.IP in deviceinfo:
+            self._ip_address = deviceinfo[MSearchKeys.IP]
+
         return
 
     def mark_byebye(self):
