@@ -1411,6 +1411,7 @@ class UpnpCoordinator(CoordinatorBase):
 
                     dev_extension = None
                     skip_device = False
+                    should_refresh = False
                     
                     # Acquire the lock before we decide if the location exists in the children table
                     self._coord_lock.acquire()
@@ -1490,10 +1491,13 @@ class UpnpCoordinator(CoordinatorBase):
 
                         else:
                             dev_extension = self._cl_children[location]
-                            # Refresh the description
-                            dev_extension.refresh_description(ip_addr, self._factory, docTree.getroot(), namespaces=namespaces)
+                            should_refresh = True
                     finally:
                         self._coord_lock.release()
+
+                    if should_refresh and dev_extension is not None:
+                        # Refresh the description
+                        dev_extension.refresh_description(ip_addr, self._factory, docTree.getroot(), namespaces=namespaces)
 
                 except SemanticError:
                     # Always allow semantic errors to propagate, semantic errors represent
