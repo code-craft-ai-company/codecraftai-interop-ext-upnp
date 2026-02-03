@@ -171,7 +171,7 @@ class Basic1DeviceDesc:
         """
             The base URL that should be used to make request for service and embedded device descriptions.
         """
-        rntval = self._baseURL if self._baseURL is not None else ""
+        rtnval = self._baseURL if self._baseURL is not None else ""
         return rtnval
 
     @property
