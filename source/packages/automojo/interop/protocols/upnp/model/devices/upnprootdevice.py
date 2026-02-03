@@ -781,6 +781,54 @@ class UpnpRootDevice(UpnpDeviceBase):
         desc = device_description_load(self.location)
         return desc
 
+    def record_description(self, ip_addr: str, urlBase: str, manufacturer: str, modelName: str, docTree: ElementTree, devNode: Element, namespaces: dict, upnp_recording: bool = False):
+        """
+            Records the device description.
+
+            :param ip_addr: The IP address of the device.
+            :param urlBase: The URLBase for the device.
+            :param manufacturer: The manufacturer of the device.
+            :param modelName: The model name of the device.
+            :param docTree: The XML ElementTree of the device description.
+            :param devNode: The device XML element.
+            :param namespaces: The namespaces used in the XML.
+            :param upnp_recording: Whether UPnP recording is enabled.
+        """
+        if upnp_recording:
+            logger.debug("Recording description for device %s at %s", modelName, ip_addr)
+        return
+
+    def refresh_description(self, ip_addr: str, factory: "UpnpDeviceFactory", docTree: Element, namespaces: dict = None):
+        """
+            Refreshes the device description from the XML description.
+
+            :param ip_addr: The IP address of the device.
+            :param factory: The UpnpDeviceFactory instance.
+            :param docTree: The root XML element of the device description.
+            :param namespaces: The namespaces used in the XML.
+        """
+        if namespaces is None:
+            namespaces = {"": UPNP_DEVICE1_NAMESPACE}
+
+        from automojo.interop.protocols.upnp.mapping.devicedetailmapper import DeviceDetailMapper
+
+        # We need specVersion from the root element
+        specVersion, _ = DeviceDetailMapper.read_spec_version_and_manufacturer(docTree, namespaces)
+
+        # docTree here is the root element (per UpnpCoordinator call)
+        device_desc = DeviceDetailMapper.create_root_device_description(docTree, namespaces, specVersion, locationURL=self._location)
+
+        self._device_lock.acquire()
+        try:
+            self._device_description = device_desc
+            self._ip_address = ip_addr
+        finally:
+            self._device_lock.release()
+
+        # Re-assemble device (services, embedded devices)
+        self.assemble_device(factory)
+
+        return
 
     def set_auto_subscribe(self, val, factory: Optional["UpnpDeviceFactory"] = None):
         """
