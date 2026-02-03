@@ -826,6 +826,7 @@ class UpnpRootDevice(UpnpDeviceBase):
         try:
             self._device_description = device_desc
             self._ip_address = ip_addr
+            self._urlBase = device_desc.baseURL
         finally:
             self._device_lock.release()
 
