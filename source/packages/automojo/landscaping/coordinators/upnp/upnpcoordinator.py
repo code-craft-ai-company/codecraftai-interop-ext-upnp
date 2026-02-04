@@ -43,6 +43,7 @@ import automojo.interop.protocols.upnp as upnp_module
 from automojo.landscaping.coordinatorbase import CoordinatorBase
 from automojo.landscaping.landscapedevice import LandscapeDevice
 from automojo.landscaping.protocolextensions.upnpprotocolextension import UpnpProtocolExtension
+from automojo.landscaping.protocolextensions.protocolextension import ProtocolExtension
 
 from automojo.interop.protocols.upnp.constants import UPNP_HEADERS
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
@@ -226,6 +227,9 @@ class UpnpCoordinator(CoordinatorBase):
 
         # Callback capture management dictionaries
         self._cl_callback_traffic_capture_from = {}
+
+        # A cache for dynamic protocol extension classes to prevent memory leaks
+        self._cl_dynamic_extension_classes = {}
 
         # =========================== Queue Lock Variables ==========================
         # Variables that manage the work queue and dispatching of work to worker threads
@@ -709,6 +713,54 @@ class UpnpCoordinator(CoordinatorBase):
 
         if type(dev) is UpnpRootDevice:
             dev = UpnpProtocolExtension(device_detail, self._presence)
+        elif isinstance(dev, UpnpRootDevice) and not isinstance(dev, ProtocolExtension):
+            # If the device is a UpnpRootDevice but not a ProtocolExtension, we need to
+            # dynamically mixin the ProtocolExtension capability so the device can be
+            # fully integrated into the landscape as an extension.
+
+            base_cls = dev.__class__
+            new_cls = None
+
+            self._coord_lock.acquire()
+            try:
+                if base_cls in self._cl_dynamic_extension_classes:
+                    new_cls = self._cl_dynamic_extension_classes[base_cls]
+                else:
+                    # Define the dynamic class name
+                    cls_name = f"{base_cls.__name__}ProtocolExtension"
+
+                    # Define the initialize method wrapper to ensure both initializers are called
+                    def initialize_wrapper(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo):
+                        # Call base class initialize (UpnpRootDevice logic)
+                        base_cls.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
+                        # Call ProtocolExtension initialize (Extension logic)
+                        ProtocolExtension.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
+
+                    # Define the __init__ wrapper to handle initialization
+                    def init_wrapper(self, device_detail, presence=None):
+                        try:
+                            # Try initializing base class with presence
+                            base_cls.__init__(self, device_detail, presence)
+                        except TypeError:
+                            # Fallback if base class doesn't accept presence
+                            base_cls.__init__(self, device_detail)
+                            if presence is not None:
+                                # Assuming UpnpRootDevice method is available
+                                self.set_presence(presence)
+
+                        ProtocolExtension.__init__(self)
+
+                    # Create the new class
+                    new_cls = type(cls_name, (base_cls, ProtocolExtension), {
+                        "__init__": init_wrapper,
+                        "initialize": initialize_wrapper,
+                        "__module__": base_cls.__module__
+                    })
+                    self._cl_dynamic_extension_classes[base_cls] = new_cls
+            finally:
+                self._coord_lock.release()
+
+            dev = new_cls(device_detail, self._presence)
 
         return dev
 
