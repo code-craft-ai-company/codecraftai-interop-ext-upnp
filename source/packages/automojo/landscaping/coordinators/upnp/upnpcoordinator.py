@@ -42,6 +42,7 @@ import automojo.interop.protocols.upnp as upnp_module
 
 from automojo.landscaping.coordinatorbase import CoordinatorBase
 from automojo.landscaping.landscapedevice import LandscapeDevice
+from automojo.landscaping.protocolextensions.upnpprotocolextension import UpnpProtocolExtension
 
 from automojo.interop.protocols.upnp.constants import UPNP_HEADERS
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
@@ -705,6 +706,10 @@ class UpnpCoordinator(CoordinatorBase):
         device_detail = UpnpDeviceDetail(device_desc, device_evidence)
         
         dev = self._factory.create_root_device_instance(device_detail)
+
+        if type(dev) is UpnpRootDevice:
+            dev = UpnpProtocolExtension(device_detail, self._presence)
+
         return dev
 
     def _device_cache_update(self, found_device: dict):
