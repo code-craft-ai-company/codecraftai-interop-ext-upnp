@@ -653,6 +653,13 @@ class UpnpRootDevice(UpnpDeviceBase):
         if MSearchKeys.IP in deviceinfo:
             self._ip_address = deviceinfo[MSearchKeys.IP]
 
+        if MSearchKeys.ROUTES in deviceinfo:
+            routes_dict = deviceinfo[MSearchKeys.ROUTES]
+            self._routes = list(routes_dict.values())
+
+            if len(self._routes) > 0:
+                self._primary_route = self._routes[0]
+
         return
 
     def mark_byebye(self):
