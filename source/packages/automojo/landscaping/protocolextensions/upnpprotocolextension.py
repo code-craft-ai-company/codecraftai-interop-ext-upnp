@@ -52,6 +52,6 @@ class UpnpProtocolExtension(UpnpCoordinatedDevice, ProtocolExtension):
             :param configinfo: The configuration information dictionary from the landscape file for the specified host.
             :param deviceinfo: The device information dictionary from the discovery process.
         """
-        UpnpRootDevice.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
+        UpnpCoordinatedDevice.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
         ProtocolExtension.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
         return
