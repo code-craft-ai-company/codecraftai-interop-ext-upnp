@@ -37,6 +37,7 @@ from automojo.interop.protocols.upnp.constants import MSearchKeys, MSearchRouteK
 from automojo.interop.protocols.upnp.upnperrors import UpnpError
 from automojo.interop.protocols.upnp.aliases import StrSvcId, StrSvcType
 from automojo.interop.protocols.upnp.constants import TIMEDELTA_RENEWAL_WINDOW, UPNP_HEADERS
+from automojo.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
 from automojo.interop.protocols.upnp.model.description.embeddeddevicedesc import EmbeddedDeviceDesc
 from automojo.interop.protocols.upnp.model.devices.upnpdevicebase import UpnpDeviceBase
 from automojo.interop.protocols.upnp.model.devices.upnpembeddeddevice import UpnpEmbeddedDevice
@@ -659,6 +660,37 @@ class UpnpRootDevice(UpnpDeviceBase):
 
             if len(self._routes) > 0:
                 self._primary_route = self._routes[0]
+
+        # Update DeviceEvidence
+        usn = deviceinfo.get("USN")
+        if usn is None:
+            usn_dev = deviceinfo.get(MSearchKeys.USN_DEV)
+            usn_cls = deviceinfo.get(MSearchKeys.USN_CLS)
+            if usn_dev and usn_cls:
+                usn = f"{usn_dev}::{usn_cls}"
+            elif usn_dev:
+                usn = usn_dev
+            else:
+                usn = self._device_evidence.usn
+
+        status = deviceinfo.get("NTS", self._device_evidence.status)
+        server = deviceinfo.get("SERVER", self._device_evidence.server)
+
+        new_evidence = DeviceEvidence(
+            usn=usn,
+            status=status,
+            server=server,
+            location=location,
+            ip=self._ip_address or self._device_evidence.ip,
+            other=deviceinfo,
+            presence=self.presence
+        )
+
+        self._device_lock.acquire()
+        try:
+            self._device_evidence = new_evidence
+        finally:
+            self._device_lock.release()
 
         return
 
