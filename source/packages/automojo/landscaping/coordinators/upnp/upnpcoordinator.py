@@ -44,6 +44,7 @@ from automojo.landscaping.coordinatorbase import CoordinatorBase
 from automojo.landscaping.landscapedevice import LandscapeDevice
 from automojo.landscaping.protocolextensions.upnpprotocolextension import UpnpProtocolExtension
 from automojo.landscaping.protocolextensions.protocolextension import ProtocolExtension
+from automojo.landscaping.coordinators.upnp.upnpcoordinateddevice import UpnpCoordinatedDevice
 
 from automojo.interop.protocols.upnp.constants import UPNP_HEADERS
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
@@ -751,7 +752,7 @@ class UpnpCoordinator(CoordinatorBase):
                         ProtocolExtension.__init__(self)
 
                     # Create the new class
-                    new_cls = type(cls_name, (base_cls, ProtocolExtension), {
+                    new_cls = type(cls_name, (base_cls, UpnpCoordinatedDevice, ProtocolExtension), {
                         "__init__": init_wrapper,
                         "initialize": initialize_wrapper,
                         "__module__": base_cls.__module__
