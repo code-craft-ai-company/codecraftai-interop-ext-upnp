@@ -16,14 +16,14 @@ import weakref
 
 from automojo.landscaping.protocolextensions.protocolextension import ProtocolExtension
 
-from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
+from automojo.landscaping.coordinators.upnp.upnpcoordinateddevice import UpnpCoordinatedDevice
 
 if TYPE_CHECKING:
     from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
     from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
 
 
-class UpnpProtocolExtension(UpnpRootDevice, ProtocolExtension):
+class UpnpProtocolExtension(UpnpCoordinatedDevice, ProtocolExtension):
     """
         UPNP agent integrated as a protocol extension for a landscape device.
     """
@@ -35,7 +35,7 @@ class UpnpProtocolExtension(UpnpRootDevice, ProtocolExtension):
             :param device_detail: The device detail object that contains the information about the device.
             :param presence: Optional UpnpPresence instance for device discovery.
         """
-        UpnpRootDevice.__init__(self, device_detail, presence)
+        UpnpCoordinatedDevice.__init__(self, device_detail, presence)
         ProtocolExtension.__init__(self)
         return
     
