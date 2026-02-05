@@ -751,7 +751,9 @@ class UpnpCoordinator(CoordinatorBase):
                         ProtocolExtension.__init__(self)
 
                     # Create the new class
-                    new_cls = type(cls_name, (base_cls, ProtocolExtension), {
+                    # We mix in UpnpProtocolExtension instead of ProtocolExtension directly
+                    # so that the resulting object is an instance of UpnpProtocolExtension.
+                    new_cls = type(cls_name, (base_cls, UpnpProtocolExtension), {
                         "__init__": init_wrapper,
                         "initialize": initialize_wrapper,
                         "__module__": base_cls.__module__
