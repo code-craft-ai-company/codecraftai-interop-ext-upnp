@@ -97,5 +97,51 @@ class TestUpnpPresence(unittest.TestCase):
         self.assertNotIn("hint_string", window.matching_devices.keys())
         self.assertIn("uuid:device1", window.matching_devices.keys())
 
+    def test_dispatch_subscription_event_callback_signatures(self):
+        """
+        Verify that subscription callbacks support both 4-arg and 5-arg signatures.
+        """
+        presence = UpnpPresence()
+
+        captured = {}
+
+        def callback_five(ifname, sid, svc_addr, headers, body):
+            captured["five"] = (ifname, sid, svc_addr, headers, body)
+
+        def callback_four(sender_ip, sid, headers, body):
+            captured["four"] = (sender_ip, sid, headers, body)
+
+        def callback_varargs(*args):
+            captured["varargs"] = args
+
+        presence._subscription_to_callback["sid5"] = callback_five
+        presence._subscription_to_callback["sid4"] = callback_four
+        presence._subscription_to_callback["sidva"] = callback_varargs
+
+        svc_addr = ("10.1.1.5", 4567)
+        headers = {"SID": "sid5"}
+        body = b"<prop>1</prop>"
+
+        presence.dispatch_subscription_event_callback("eth0", "sid5", svc_addr, headers, body)
+        presence.dispatch_subscription_event_callback("eth0", "sid4", svc_addr, headers, body)
+        presence.dispatch_subscription_event_callback("eth0", "sidva", svc_addr, headers, body)
+
+        self.assertEqual(captured["five"][0], "eth0")
+        self.assertEqual(captured["five"][1], "sid5")
+        self.assertEqual(captured["five"][2], svc_addr)
+        self.assertEqual(captured["five"][3], headers)
+        self.assertEqual(captured["five"][4], body)
+
+        self.assertEqual(captured["four"][0], "10.1.1.5")
+        self.assertEqual(captured["four"][1], "sid4")
+        self.assertEqual(captured["four"][2], headers)
+        self.assertEqual(captured["four"][3], body)
+
+        self.assertEqual(captured["varargs"][0], "eth0")
+        self.assertEqual(captured["varargs"][1], "sidva")
+        self.assertEqual(captured["varargs"][2], svc_addr)
+        self.assertEqual(captured["varargs"][3], headers)
+        self.assertEqual(captured["varargs"][4], body)
+
 if __name__ == '__main__':
     unittest.main()

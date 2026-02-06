@@ -18,14 +18,11 @@ from automojo.errors.exceptions import SemanticError, ConfigurationError
 from automojo.thisapp.wellknown import ThisApplicationSingleton
 from automojo.thisapp.contextpaths import ContextPaths
 
-from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
 from automojo.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
-from automojo.interop.protocols.upnp.upnpsearchwindow import UpnpSearchWindow
 
 from automojo.landscaping.coupling.coordinatorcoupling import CoordinatorCoupling
 
 from automojo.landscaping.coordinators.upnp.upnpcoordinator import UpnpCoordinator
-from automojo.landscaping.friendlyidentifier import FriendlyIdentifier
 
 
 # Types imported only for type checking purposes
@@ -68,8 +65,6 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
     lookup_upnp_device_config = {}
     lookup_upnp_device = {}
 
-    upnp_presence = UpnpPresence()
-
 
     def __init__(self, *args, **kwargs):
         """
@@ -93,6 +88,8 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
         """
 
         cls.landscape = landscape
+        cls.lookup_upnp_device_config = {}
+        cls.lookup_upnp_device = {}
         layer_config = landscape.layer_configuration
 
         device_config_list = layer_config.get_device_configs()
@@ -206,30 +203,20 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
                 raise SemanticError("we should not have been called if the upnp device config had 0 devices.") from None
 
             required_devices = None
-            required_device_hints = []
             if not allow_missing_devices:
-                required_device_hints = [UpnpDeviceHint(identifier) for identifier in cls.lookup_upnp_device_config.keys()]
-                required_devices = required_device_hints
+                required_devices = [UpnpDeviceHint(identifier) for identifier in cls.lookup_upnp_device_config.keys()]
 
-            cls.upnp_presence.start(exclude_interfaces=exclude_interfaces)
+            if cls.coordinator is None:
+                raise SemanticError("UPnP coordinator not initialized.") from None
 
-            disco_window: UpnpSearchWindow = cls.upnp_presence.discover_devices(limit_to=required_devices)
-            disco_window.wait()
-
-            found_devices = disco_window.devices_found
-            matching_devices = disco_window.matching_devices
-
-            missing_devices = []
-            for identifier in cls.lookup_upnp_device_config.keys():
-                # Check if any of the device hints match this identifier
-                device_found = False
-                for hint in required_device_hints:
-                    if hint in matching_devices and hint.get_hint() == identifier:
-                        device_found = True
-                        break
-                
-                if not device_found:
-                    missing_devices.append(identifier)
+            found_devices, matching_devices, missing_devices = cls.coordinator.startup_scan(
+                query_devices=cls.lookup_upnp_device_config,
+                required_devices=required_devices,
+                watchlist=None,
+                exclude_interfaces=exclude_interfaces,
+                upnp_recording=upnp_recording,
+                allow_unknown_devices=allow_unknown_devices
+            )
 
             conn_results = {
                 "upnp": {

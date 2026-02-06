@@ -500,6 +500,10 @@ class UpnpRootDevice(UpnpDeviceBase):
                     host_ip = self.IPAddress
 
                 custom_headers = self.get_custom_subscribe_headers()
+                previous_sid = None
+                if renew and sid is not None:
+                    previous_sid = sid
+
                 sub_sid, sub_expires = presence.service_subscribe(
                     host_ip,
                     subscribe_url,
@@ -510,6 +514,10 @@ class UpnpRootDevice(UpnpDeviceBase):
 
                 with self._device_lock:
                     if sub_sid is not None:
+                        if previous_sid is not None and previous_sid != sub_sid:
+                            if previous_sid in self._sid_to_service_lookup:
+                                del self._sid_to_service_lookup[previous_sid]
+                            self._unregister_subscription_mapping(previous_sid)
                         self._sid_to_service_lookup[sub_sid] = target_service
                         self._subscriptions[service_type] = (sub_sid, sub_expires)
                         # Register the subscription with the coordinator for proper callback routing
@@ -765,7 +773,7 @@ class UpnpRootDevice(UpnpDeviceBase):
 
         return
 
-    def process_subscription_callback(self, sender_ip, sid: str, headers: dict, body: str):
+    def process_subscription_callback(self, sender_ip, sid: str, headers: dict, body: Union[str, bytes]):
         """
             This is used by the subscription callback thread to handoff work packets to the a worker thread
             and completes the processing of the subscription callback and routing to a UpnpRootDevice and
@@ -777,6 +785,10 @@ class UpnpRootDevice(UpnpDeviceBase):
             :param body: The body content of the HTTP subscription callback.
         """
         # pylint: disable=unused-argument
+
+        coord = self.coordinator
+        if coord is not None:
+            coord.capture_subscription_callback(sender_ip, headers, body)
 
         service = None
 
@@ -803,18 +815,12 @@ class UpnpRootDevice(UpnpDeviceBase):
         """
             Registers the subscription with the coordinator so callbacks can be routed.
         """
-        coord = self.coordinator
-        if coord is not None and sid is not None:
-            coord.register_subscription_for_device(sid, self)
         return
 
     def _unregister_subscription_mapping(self, sid: str):
         """
             Unregisters the subscription from the coordinator so stale entries are removed.
         """
-        coord = self.coordinator
-        if coord is not None and sid is not None:
-            coord.unregister_subscription_for_device(sid)
         return
 
     def query_device_description(self):

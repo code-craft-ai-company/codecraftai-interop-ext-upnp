@@ -14,13 +14,15 @@ from typing import Optional
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
 
 from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
+from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
+
 
 class UpnpCoordinatedDevice(UpnpRootDevice):
     """
         Wraps a UPNP root device that can be managed by a coordinator.
     """
 
-    def __init__(self, device_detail: UpnpDeviceDetail, presence: Optional["UpnpPresence"] = None):
+    def __init__(self, device_detail: UpnpDeviceDetail, presence: Optional[UpnpPresence] = None):
         """
             Initializes a :class:`UpnpCoordinatedDevice`.
 

@@ -10,20 +10,18 @@ __copyright__ = "Copyright 2025, Automation Mojo LLC"
 __credits__ = []
 
 
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Optional
 
 import weakref
 
 from automojo.landscaping.protocolextensions.protocolextension import ProtocolExtension
 
-from automojo.landscaping.coordinators.upnp.upnpcoordinateddevice import UpnpCoordinatedDevice
-
-if TYPE_CHECKING:
-    from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
-    from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
+from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
+from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
+from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail    
 
 
-class UpnpProtocolExtension(UpnpCoordinatedDevice, ProtocolExtension):
+class UpnpProtocolExtension(UpnpRootDevice, ProtocolExtension):
     """
         UPNP agent integrated as a protocol extension for a landscape device.
     """
@@ -35,7 +33,7 @@ class UpnpProtocolExtension(UpnpCoordinatedDevice, ProtocolExtension):
             :param device_detail: The device detail object that contains the information about the device.
             :param presence: Optional UpnpPresence instance for device discovery.
         """
-        UpnpCoordinatedDevice.__init__(self, device_detail, presence)
+        UpnpRootDevice.__init__(self, device_detail, presence)
         ProtocolExtension.__init__(self)
         return
     
@@ -52,6 +50,6 @@ class UpnpProtocolExtension(UpnpCoordinatedDevice, ProtocolExtension):
             :param configinfo: The configuration information dictionary from the landscape file for the specified host.
             :param deviceinfo: The device information dictionary from the discovery process.
         """
-        UpnpCoordinatedDevice.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
+        UpnpRootDevice.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
         ProtocolExtension.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
         return

@@ -13,7 +13,7 @@ __copyright__ = "Copyright 2025, Automation Mojo LLC"
 __credits__ = []
 
 
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, TYPE_CHECKING, Union
 
 
 import threading
@@ -46,14 +46,15 @@ class UpnpSearchWindow:
         activities on the network.
     """
 
-    def __init__(self, presence: "UpnpPresence", id: str, start: datetime, end: datetime, monitor_interval: float, limit_to: List[UpnpDeviceHint]=None):
+    def __init__(self, presence: "UpnpPresence", id: str, start: datetime, end: datetime, monitor_interval: float, limit_to: Optional[List[Union[UpnpDeviceHint, str]]]=None):
         """
             :param presence: The owning :class:`UpnpPresence` instance.
             :param id: Identifier for this search window.
             :param start: Start time of the search window.
             :param end: End time of the search window.
             :param monitor_interval: Polling interval for window monitoring.
-            :param limit_to: Optional list of device hints to limit the search.
+            :param limit_to: Optional list of device hints to limit the search. Accepts
+                :class:`UpnpDeviceHint` or strings.
         """
 
         self._presence_ref = weakref.ref(presence)
@@ -61,11 +62,17 @@ class UpnpSearchWindow:
         self._start = start
         self._end = end
         self._monitor_interval = monitor_interval
-        self._limit_to = limit_to
+        if limit_to is not None:
+            self._limit_to = [
+                item if isinstance(item, UpnpDeviceHint) else UpnpDeviceHint(str(item))
+                for item in limit_to
+            ]
+        else:
+            self._limit_to = None
 
         self._still_waiting_for = None
-        if limit_to is not None:
-            self._still_waiting_for = [hint for hint in limit_to]
+        if self._limit_to is not None:
+            self._still_waiting_for = [hint for hint in self._limit_to]
 
         self._window_state = UpnpSearchWindowState.INACTIVE
 

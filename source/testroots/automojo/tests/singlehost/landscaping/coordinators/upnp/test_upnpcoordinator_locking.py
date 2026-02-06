@@ -6,6 +6,9 @@ from unittest.mock import MagicMock, patch
 try:
     from automojo.landscaping.coordinators.upnp.upnpcoordinator import UpnpCoordinator
     from automojo.interop.protocols.upnp.constants import MSearchKeys
+    from automojo.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
+    from automojo.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
+    from automojo.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
 except ImportError:
     UpnpCoordinator = None
 
@@ -113,3 +116,99 @@ class TestUpnpCoordinatorLocking(unittest.TestCase):
                         refresh_idx = i
 
                 assert refresh_idx > last_release_idx, "refresh_description was called before lock release!"
+
+    def test_hint_consumes_first_matching_device(self):
+        # Mock dependencies
+        lscape = MagicMock()
+
+        with patch('automojo.landscaping.coordinators.upnp.upnpcoordinator.UpnpPresence'), \
+             patch('automojo.landscaping.coordinators.upnp.upnpcoordinator.UpnpDeviceFactory'):
+
+            coordinator = UpnpCoordinator(lscape)
+
+            class AlwaysMatchHint(UpnpDeviceHint):
+                def matches(self, exhibit):  # pylint: disable=unused-argument
+                    return True
+
+            hint = AlwaysMatchHint("always")
+
+            evidence1 = DeviceEvidence(
+                usn="uuid:one::upnp:rootdevice",
+                status="ssdp:alive",
+                server="server",
+                location="http://one/desc.xml",
+                ip="192.168.1.10",
+                other={},
+                presence=MagicMock()
+            )
+            evidence2 = DeviceEvidence(
+                usn="uuid:two::upnp:rootdevice",
+                status="ssdp:alive",
+                server="server",
+                location="http://two/desc.xml",
+                ip="192.168.1.11",
+                other={},
+                presence=MagicMock()
+            )
+
+            detail1 = UpnpDeviceDetail(None, evidence1)
+            detail2 = UpnpDeviceDetail(None, evidence2)
+
+            discovered = {
+                evidence1.usn: detail1,
+                evidence2.usn: detail2
+            }
+
+            matches = coordinator._match_hints_to_discovered([hint], discovered)
+
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0][1], evidence1.usn)
+            self.assertIs(detail1.hint, hint)
+            self.assertIsNone(detail2.hint)
+
+    def test_startup_scan_matching_devices_keyed_by_usn(self):
+        # Mock dependencies
+        lscape = MagicMock()
+        lscape._internal_get_upnp_device_config_lookup_table.return_value = {}
+
+        with patch('automojo.landscaping.coordinators.upnp.upnpcoordinator.UpnpPresence'), \
+             patch('automojo.landscaping.coordinators.upnp.upnpcoordinator.UpnpDeviceFactory'):
+
+            coordinator = UpnpCoordinator(lscape)
+
+            hint = UpnpDeviceHint("device-uuid")
+            usn = "uuid:device-uuid::upnp:rootdevice"
+
+            evidence = DeviceEvidence(
+                usn=usn,
+                status="ssdp:alive",
+                server="server",
+                location="http://device/desc.xml",
+                ip="192.168.1.20",
+                other={},
+                presence=MagicMock()
+            )
+
+            detail = UpnpDeviceDetail(None, evidence)
+
+            window = MagicMock()
+            window.devices_found = {usn: detail}
+            window.wait.return_value = True
+
+            coordinator._presence = MagicMock()
+            coordinator._presence.is_running = True
+            coordinator._presence.discover_devices.return_value = window
+
+            with patch.object(coordinator, "_update_root_device"), \
+                 patch.object(coordinator, "_device_cache_update"), \
+                 patch.object(coordinator, "_start_all_threads"):
+                found_devices, matching_devices, missing_devices = coordinator.startup_scan(
+                    query_devices={hint.get_hint(): {}},
+                    required_devices=None,
+                    watchlist=None
+                )
+
+            self.assertIn(usn, found_devices)
+            self.assertIn(usn, matching_devices)
+            self.assertEqual(matching_devices[usn].get("HINT"), hint.get_hint())
+            self.assertEqual(len(missing_devices), 0)

@@ -14,6 +14,7 @@ __credits__ = []
 
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
+import inspect
 import copy
 import os
 import re
@@ -365,13 +366,14 @@ class UpnpPresence:
         return self._multicast_address, self._multicast_port
 
 
-    def discover_devices(self, limit_to: List[UpnpDeviceHint]=None, custom_headers: Optional[Dict[str, str]] = None,
+    def discover_devices(self, limit_to: Optional[List[Union[UpnpDeviceHint, str]]]=None, custom_headers: Optional[Dict[str, str]] = None,
                          window_length: float = UPNP_DEFAULT_SEARCH_WINDOW_LENGTH,
                          monitor_interval: float = UPNP_DEFAULT_SEARCH_MONITOR_INTERVAL) -> UpnpSearchWindow:
         """
             Begin discovery of UPnP devices on the network.
             
-            :param limit_to: Optional device hints to limit the search.
+            :param limit_to: Optional device hints to limit the search. Accepts a list of
+                             :class:`UpnpDeviceHint` or strings.
             :param custom_headers: Optional additional search headers.
             :param window_length: How long the search window remains active.
             :param monitor_interval: Polling interval for search window updates.
@@ -407,7 +409,17 @@ class UpnpPresence:
 
         wid = str(uuid.uuid4())
 
-        disco_window = UpnpSearchWindow(self, wid, start, end, monitor_interval, limit_to=limit_to)
+        if limit_to is not None:
+            normalized_limit_to = []
+            for item in limit_to:
+                if isinstance(item, UpnpDeviceHint):
+                    normalized_limit_to.append(item)
+                else:
+                    normalized_limit_to.append(UpnpDeviceHint(str(item)))
+        else:
+            normalized_limit_to = None
+
+        disco_window = UpnpSearchWindow(self, wid, start, end, monitor_interval, limit_to=normalized_limit_to)
         disco_window.start()
 
         self._lock.acquire()
@@ -559,7 +571,7 @@ class UpnpPresence:
         return
 
 
-    def dispatch_subscription_event_callback(self, ifname: str, sid: str, svc_addr: Tuple[str, int], req_headers: Dict[str, str], req_body: str):
+    def dispatch_subscription_event_callback(self, ifname: str, sid: str, svc_addr: Tuple[str, int], req_headers: Dict[str, str], req_body: bytes):
 
         service_event_callback = None
         self._lock.acquire()
@@ -570,7 +582,24 @@ class UpnpPresence:
             self._lock.release()
 
         if service_event_callback is not None:
-            service_event_callback(ifname, sid, svc_addr, req_headers, req_body)
+            try:
+                signature = inspect.signature(service_event_callback)
+                params = list(signature.parameters.values())
+                accepts_varargs = any(p.kind == p.VAR_POSITIONAL for p in params)
+
+                if accepts_varargs or len(params) == 5:
+                    service_event_callback(ifname, sid, svc_addr, req_headers, req_body)
+                elif len(params) == 4:
+                    sender_ip = svc_addr[0]
+                    service_event_callback(sender_ip, sid, req_headers, req_body)
+                else:
+                    logger.error(
+                        "Subscription callback has unsupported signature. sid=%s params=%d",
+                        sid,
+                        len(params)
+                    )
+            except Exception as ex:
+                logger.error("Error in subscription event callback sid=%s: %s", sid, ex)
 
         return
 
@@ -874,6 +903,28 @@ class UpnpPresence:
                 self._root_device_notifications_by_usn[usn].append(notify_callback)
             else:
                 self._root_device_notifications_by_usn[usn] = [notify_callback]
+        finally:
+            self._lock.release()
+        return
+
+    def unregister_root_device_notification_handler(self, usn: str, notify_callback: Optional[Callable] = None):
+        """
+            Unregister a callback function for a root device notification.
+
+            :param usn: The USN of the device to unregister.
+            :param notify_callback: Optional callback to remove. If None, all callbacks are removed.
+        """
+        self._lock.acquire()
+        try:
+            if usn in self._root_device_notifications_by_usn:
+                if notify_callback is None:
+                    del self._root_device_notifications_by_usn[usn]
+                else:
+                    callbacks = self._root_device_notifications_by_usn[usn]
+                    if notify_callback in callbacks:
+                        callbacks.remove(notify_callback)
+                    if len(callbacks) == 0:
+                        del self._root_device_notifications_by_usn[usn]
         finally:
             self._lock.release()
         return
@@ -1370,11 +1421,6 @@ class UpnpPresence:
                 return
 
             req_body = request[headers_length:]
-            try:
-                req_body = req_body.decode("utf-8")
-            except UnicodeDecodeError as e:
-                logger.error("Failed to decode callback request body as UTF-8 from %s: %s", svc_addr, e)
-                req_body = ""
 
             #TODO: Add package capture support for debugging callback requests
 

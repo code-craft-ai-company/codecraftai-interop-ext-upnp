@@ -11,17 +11,13 @@ __copyright__ = "Copyright 2025, Automation Mojo LLC"
 __credits__ = []
 
 
-from typing import Dict, List, Optional, TYPE_CHECKING, Union
+from typing import Dict, List, Optional, TYPE_CHECKING, Tuple, Union
 
 import os
-import socket
 import threading
 import traceback
 import uuid
 import weakref
-
-from http import HTTPStatus
-from io import BytesIO, SEEK_END
 
 import yaml
 
@@ -33,9 +29,7 @@ from automojo.landscaping.friendlyidentifier import FriendlyIdentifier
 from automojo.thisapp.wellknown import ThisApplicationSingleton
 from automojo.thisapp.contextpaths import ContextPaths
 
-from automojo.networking.constants import HTTP1_1_LINESEP, HTTP1_1_END_OF_HEADER
 from automojo.networking.interfaces import get_interface_for_ip
-from automojo.networking.multicast import create_multicast_socket
 from automojo.networking.trafficcapturecontext import TrafficCaptureContext
 
 import automojo.interop.protocols.upnp as upnp_module
@@ -45,19 +39,16 @@ from automojo.landscaping.landscapedevice import LandscapeDevice
 from automojo.landscaping.protocolextensions.upnpprotocolextension import UpnpProtocolExtension
 from automojo.landscaping.protocolextensions.protocolextension import ProtocolExtension
 
-from automojo.interop.protocols.upnp.constants import UPNP_HEADERS
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import device_description_load
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import device_description_find_components
 
 from automojo.interop.protocols.upnp.model.devices.upnpdevicefactory import UpnpDeviceFactory
-from automojo.interop.protocols.upnp.upnppresence import UpnpPresence, notify_parse_request
+from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
 from automojo.interop.protocols.upnp.constants import MSearchKeys, MSearchRouteKeys
 from automojo.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
 from automojo.interop.protocols.upnp.model.services.upnpserviceproxy import UpnpServiceProxy
 from automojo.interop.protocols.upnp.constants import UPNP_DEVICE1_NAMESPACE
-
-from automojo.networking.interfaces import get_ipv4_address
 
 
 # Types imported only for type checking purposes
@@ -68,66 +59,12 @@ EMPTY_LIST = []
 
 UPNP_DIR = os.path.dirname(upnp_module.__file__)
 
-UPNP_SUBSCRIPTION_NOTIFY_RESPONSE_OK = HTTP1_1_LINESEP.join([
-    b'HTTP/1.1 200 OK',
-    b'Connection: close',
-    b'Content-Length: 0',
-    b'Content-Type: text/html',
-    b'Server: %s,UPnP/1.0' % UPNP_HEADERS.SERVER.encode(),
-    b''
-])
-
-def http_parse_header(header_content):
-    """
-        Parses an HTTP header block and returns the request line and
-        dictionary of header values.
-
-        :param header_content: Raw bytes of the HTTP header.
-
-        :returns: Tuple of the request line and a dictionary of headers.
-    """
-
-    headers = {}
-    header_lines = header_content.splitlines(False)
-
-    assert len(header_lines) > 0, "The header content was not a valid HTTP request header."
-    
-    # Validate that the first line is not empty
-    if not header_lines[0]:
-        raise ValueError("HTTP request line cannot be empty")
-    
-    # Decode request line to maintain consistent string types in return value
-    try:
-        req_line = header_lines[0].decode('utf-8').strip()
-    except UnicodeDecodeError:
-        # Fallback for malformed request line
-        req_line = header_lines[0].decode('utf-8', errors='replace').strip()
-    
-    # Validate that the decoded request line is not empty
-    if not req_line:
-        raise ValueError("HTTP request line cannot be empty after decoding")
-    
-    for hline in header_lines[1:]:
-        name_end = hline.find(b":")
-        if name_end > 0:  # Header name must be at least 1 character long
-            try:
-                hname = hline[:name_end].decode('utf-8').strip().upper()
-                hval = hline[name_end + 1:].decode('utf-8').strip()
-                # Only add headers with non-empty names after stripping
-                if hname:
-                    headers[hname] = hval
-            except UnicodeDecodeError:
-                # Skip malformed headers that can't be decoded as UTF-8
-                continue
-    return req_line, headers
-
 
 class UpnpCoordinator(CoordinatorBase):
     """
         The UpnpCoordinator utilizes the expected device declarations of type 'network/upnp' to establish and maintain connectivity
         and interoperability with UPNP based network devices.  The UpnpCoordinator will scan all interfaces except for the excluded
-        interfaces.  It also creates a general broadcast monitor thread and a subscription dispatch thread for each interface it
-        is monitoring.
+        interfaces.  It relies on :class:`UpnpPresence` for SSDP discovery, notifications, and subscription callbacks.
     """
     # pylint: disable=attribute-defined-outside-init
 
@@ -175,13 +112,6 @@ class UpnpCoordinator(CoordinatorBase):
         self._allow_unknown_devices = False
         self._upnp_recording = True
 
-        # Store the control point reference
-        self._control_point = _kwargs.get('control_point')
-
-        # The count for the shutdown gate semaphore is set at startup so we don't
-        # need to lock protect it.  Once it is set, it is fixed for the lifespan
-        # of the UpnpCoordinator
-        self._shutdown_gate = None
 
         # ======================= Coordinator Lock Variables =======================
         # These variables are protected and read/write synchronized by the coordinator
@@ -194,33 +124,12 @@ class UpnpCoordinator(CoordinatorBase):
         # Initialize the children lookup table
         self._cl_children = {}
 
-        # Initialize monitor thread reference
-        self._monitor_thread = None
-
-        # Callback threads are created on a per interface basis so we use a list
-        # to manage them.
-        self._cl_callback_threads = []
-
-        # We don't want our threads that are answering requests or filtering traffic
-        # to do extensive amounts of work, so we have a pool of worker threads that
-        # that work is dispatched to for incoming requests and information processing.
-        self._cl_worker_threads = []
-
         # A lookup table from USN -> devinfo for devices that were declared as
         # watched devices, the watched devices are devices that will be monitored
         # under special constraints and the coordinator will ensure they are found
         # during startup and will expend thread resources to ensure they are updated
         self._cl_watched_devices = {}
 
-        self._cl_iface_callback_addr_lookup = None
-
-        # A lookup table that store device registrations for differen subscription id(s)
-        # The UpnpCoordinator spins up one thread per interface that needs to be monitored
-        # for callback traffic from devices and provides a callback URL for subscriptions
-        # to the devices,  the callback threads use this table to dispatch subscription
-        # callbacks on given interfaces to the appropriate device. So UpnpEventVar instances
-        # can be updated.
-        self._cl_subscription_id_to_device = {}
 
         # A reverse lookup table that can lookup the device hint from its USN
         self._cl_usn_to_hint = {}
@@ -231,12 +140,6 @@ class UpnpCoordinator(CoordinatorBase):
         # A cache for dynamic protocol extension classes to prevent memory leaks
         self._cl_dynamic_extension_classes = {}
 
-        # =========================== Queue Lock Variables ==========================
-        # Variables that manage the work queue and dispatching of work to worker threads
-        self._queue_lock = threading.RLock()
-        self._queue_available = threading.Semaphore(0)
-        self._queue_work = []
-
         self._match_table = {
             "modelName": ('upnp', UpnpRootDevice._matches_model_name), # pylint: disable=protected-access
             "modelNumber": ('upnp', UpnpRootDevice._matches_model_number) # pylint: disable=protected-access
@@ -244,7 +147,8 @@ class UpnpCoordinator(CoordinatorBase):
 
         self._excluded_interfaces = ["lo"]
 
-        self._cl_callback_interface_sockets = {}
+        # Track registered presence handlers to avoid duplicate registration
+        self._cl_registered_root_device_notifications = set()
 
         # Initialize scan result storage
         self._found_devices = {}
@@ -252,6 +156,76 @@ class UpnpCoordinator(CoordinatorBase):
         self._unavailable_devices = []
 
         return
+
+    def establish_connectivity(self, activation_params):
+        """
+            Called by the :class:`LandscapeOperationalLayer` in order for the coordinator to be able to
+            verify connectivity with devices.
+
+            :param activation_params: Activation parameters used during initialization.
+        """
+        lscape = self.landscape
+
+        allow_missing_devices = getattr(activation_params, "allow_missing_devices", False)
+        allow_unknown_devices = getattr(activation_params, "allow_unknown_devices", False)
+
+        query_devices = {}
+        device_configs = lscape.get_device_configs()
+        for dev_config in device_configs:
+            dev_type = dev_config.get("deviceType")
+            if dev_type != "network/upnp":
+                continue
+
+            identifier = dev_config.get("hint", "")
+            if len(identifier) == 0:
+                identifier = dev_config.get("USN", "")
+            if len(identifier) == 0:
+                continue
+
+            query_devices[identifier] = dev_config
+
+        required_devices = None
+        if not allow_missing_devices and len(query_devices) > 0:
+            required_devices = [identifier for identifier in query_devices.keys()]
+
+        exclude_interfaces = ["lo"]
+
+        this_app = ThisApplicationSingleton()
+        context = this_app.context
+        runtime_exclude_interfaces = context.lookup(ContextPaths.UPNP_EXCLUDE_INTERFACES)
+        if runtime_exclude_interfaces is not None:
+            exclude_interfaces = runtime_exclude_interfaces
+
+        found_devices, matching_devices, missing_devices = self.startup_scan(
+            query_devices=query_devices,
+            required_devices=required_devices,
+            watchlist=None,
+            exclude_interfaces=exclude_interfaces,
+            allow_unknown_devices=allow_unknown_devices
+        )
+
+        results = []
+
+        hint_to_device = {}
+        for devinfo in matching_devices.values():
+            hint_key = devinfo.get("HINT")
+            if hint_key:
+                hint_to_device[hint_key] = devinfo
+
+        for identifier in query_devices.keys():
+            if identifier in hint_to_device:
+                devinfo = hint_to_device[identifier]
+                ipaddr = devinfo.get(MSearchKeys.IP)
+                results.append((identifier, ipaddr, True, None, None, None))
+            else:
+                results.append((identifier, None, False, None, None, None))
+
+        for missing in missing_devices:
+            missing_key = missing if isinstance(missing, str) else str(missing)
+            if missing_key not in query_devices:
+                results.append((missing_key, None, False, None, None, None))
+
+        return results
 
     @property
     def local_udn(self) -> str:
@@ -326,6 +300,28 @@ class UpnpCoordinator(CoordinatorBase):
 
         return
 
+    def capture_subscription_callback(self, sender_ip: str, headers: dict, body: bytes):
+        """
+            Captures subscription callback traffic for diagnostics.
+
+            :param sender_ip: The IP address of the sender.
+            :param headers: The HTTP headers associated with the callback.
+            :param body: The body content of the callback request.
+        """
+        capture_to = None
+        self._coord_lock.acquire()
+        try:
+            if sender_ip in self._cl_callback_traffic_capture_from:
+                capture_to = [cc for cc in self._cl_callback_traffic_capture_from[sender_ip].values()]
+        finally:
+            self._coord_lock.release()
+
+        if capture_to is not None:
+            for cc in capture_to:
+                cc.append_capture(headers, body)
+
+        return
+
     def establish_presence(self):
         """
             Establishes presence subscriptions for all watched devices.
@@ -352,6 +348,77 @@ class UpnpCoordinator(CoordinatorBase):
             callback_url = self._presence.form_callback_url_for_interface(ifname)
 
         return callback_url
+
+    def _build_device_info_from_detail(self, device_detail: "UpnpDeviceDetail") -> dict:
+        """
+            Build a device info dictionary from a device detail object.
+
+            :param device_detail: The UPnP device detail object.
+
+            :returns: A dictionary in the format expected by the coordinator.
+        """
+        evidence = device_detail.evidence
+        ip_addr = evidence.ip
+        usn = evidence.usn
+        usn_dev = evidence.usn_dev
+        usn_cls = evidence.usn_cls
+        if usn_dev is None or usn_cls is None:
+            parsed_dev, parsed_cls = self._split_usn(usn)
+            if usn_dev is None:
+                usn_dev = parsed_dev
+            if usn_cls is None:
+                usn_cls = parsed_cls
+        ifname = get_interface_for_ip(ip_addr) if ip_addr else None
+
+        routes = {}
+        if ifname is not None and ip_addr is not None:
+            routes[ifname] = {
+                MSearchRouteKeys.IFNAME: ifname,
+                MSearchRouteKeys.IP: ip_addr
+            }
+
+        device_info = {
+            MSearchKeys.IP: ip_addr,
+            MSearchKeys.LOCATION: evidence.location,
+            MSearchKeys.USN: usn,
+            MSearchKeys.USN_DEV: usn_dev,
+            MSearchKeys.USN_CLS: usn_cls,
+            "HINT": device_detail.hint.get_hint() if device_detail.hint is not None else None,
+            MSearchKeys.ROUTES: routes
+        }
+
+        return device_info
+
+    def _match_hints_to_discovered(self, hints: List[UpnpDeviceHint], discovered_devices: Dict[str, "UpnpDeviceDetail"]):
+        """
+            Match hints to discovered devices using first-match semantics.
+
+            :param hints: List of hints to match.
+            :param discovered_devices: Mapping of USN to device detail.
+
+            :returns: List of tuples (hint, usn, device_info).
+        """
+        matches = []
+        used_usns = set()
+
+        for hint in hints:
+            for usn, device_detail in discovered_devices.items():
+                if usn in used_usns:
+                    continue
+                if usn is None:
+                    self.logger.debug("Discovered device entry missing USN; skipping.")
+                    continue
+                if len(usn) == 0:
+                    self.logger.debug("Discovered device entry has empty USN; skipping.")
+                    continue
+                if hint.matches(device_detail):
+                    used_usns.add(usn)
+                    device_detail.set_hint(hint)
+                    device_info = self._build_device_info_from_detail(device_detail)
+                    matches.append((hint, usn, device_info))
+                    break
+
+        return matches
 
     def lookup_device_by_mac(self, mac: str) -> Union[LandscapeDevice, None]:
         """
@@ -385,11 +452,13 @@ class UpnpCoordinator(CoordinatorBase):
         """
 
         found = None
+        hint_obj = hint if isinstance(hint, UpnpDeviceHint) else UpnpDeviceHint(hint)
 
         self._coord_lock.acquire()
         try:
             for nxtdev in self._cl_children.values():
-                if nxtdev.USN.find(hint) > -1:
+                dev_detail = nxtdev.device_detail
+                if hint_obj.matches(dev_detail):
                     found = nxtdev
                     break
             
@@ -462,57 +531,6 @@ class UpnpCoordinator(CoordinatorBase):
 
         return found
 
-    def lookup_device_instance_for_sid(self, sid: str) -> UpnpServiceProxy:
-        """
-            Lookup a device instance that has been registered with a subscription id.
-
-            :param sid: The sid of a service device to search for.
-
-            :returns: A device found to be associated with the sid provided.
-        """
-        device_inst = None
-
-        self._coord_lock.acquire()
-        try:
-            if sid in self._cl_subscription_id_to_device:
-                device_inst = self._cl_subscription_id_to_device[sid]
-        finally:
-            self._coord_lock.release()
-
-        return device_inst
-
-    def register_subscription_for_device(self, sid: str, device: UpnpRootDevice):
-        """
-            Registers a service instance for event callbacks via a 'sid'.
-
-            :param sid: The service subscription id to register a device with.
-            :param device: The device to register as a handler for notifications for the sid provided.
-        """
-
-        self._coord_lock.acquire()
-        try:
-            self._cl_subscription_id_to_device[sid] = device
-        finally:
-            self._coord_lock.release()
-
-        return
-
-    def unregister_subscription_for_device(self, sid: str):
-        """
-            Unregisters a service instance from event callbacks when a subscription ends.
-
-            :param sid: The service subscription id to remove.
-        """
-
-        self._coord_lock.acquire()
-        try:
-            if sid in self._cl_subscription_id_to_device:
-                del self._cl_subscription_id_to_device[sid]
-        finally:
-            self._coord_lock.release()
-
-        return
-
     def startup_scan(self, query_devices: Dict[str, dict], required_devices: Optional[List[str]] = None,
                            watchlist: Optional[List[str]] = None, exclude_interfaces: Optional[List] = None,
                             response_timeout: float = 20, pre_msearch_timeout=20, retry: int = 2, 
@@ -563,6 +581,66 @@ class UpnpCoordinator(CoordinatorBase):
         for device_hint in query_devices.keys():
             device_hints.append(UpnpDeviceHint(device_hint))
 
+        required_hints = []
+        if required_devices is not None:
+            for devhint in required_devices:
+                if isinstance(devhint, UpnpDeviceHint):
+                    required_hints.append(devhint)
+                else:
+                    required_hints.append(UpnpDeviceHint(str(devhint)))
+
+        if device_hints:
+            query_hint_keys = [hint.get_hint() for hint in device_hints]
+            seen_query_hints = set()
+            duplicate_query_hints = set()
+            for hint in query_hint_keys:
+                if hint in seen_query_hints:
+                    duplicate_query_hints.add(hint)
+                else:
+                    seen_query_hints.add(hint)
+            if len(duplicate_query_hints) > 0:
+                errmsg_lines = [
+                    "Duplicate hints found in query devices.",
+                    "DUPLICATE QUERY HINTS:"
+                ]
+                for hint in sorted(duplicate_query_hints):
+                    errmsg_lines.append(f"    {hint}")
+                errmsg = os.linesep.join(errmsg_lines)
+                raise SemanticError(errmsg) from None
+
+        if required_hints:
+            required_hint_keys = [hint.get_hint() for hint in required_hints]
+            seen_required_hints = set()
+            duplicate_required_hints = set()
+            for hint in required_hint_keys:
+                if hint in seen_required_hints:
+                    duplicate_required_hints.add(hint)
+                else:
+                    seen_required_hints.add(hint)
+            if len(duplicate_required_hints) > 0:
+                errmsg_lines = [
+                    "Duplicate hints found in required devices.",
+                    "DUPLICATE REQUIRED HINTS:"
+                ]
+                for hint in sorted(duplicate_required_hints):
+                    errmsg_lines.append(f"    {hint}")
+                errmsg = os.linesep.join(errmsg_lines)
+                raise SemanticError(errmsg) from None
+
+        if required_hints:
+            query_hint_keys = {hint.get_hint() for hint in device_hints}
+            required_hint_keys = {hint.get_hint() for hint in required_hints}
+            missing_from_query = required_hint_keys - query_hint_keys
+            if len(missing_from_query) > 0:
+                errmsg_lines = [
+                    "Required devices must be included in query_devices.",
+                    "MISSING FROM QUERY:"
+                ]
+                for hint in sorted(missing_from_query):
+                    errmsg_lines.append(f"    {hint}")
+                errmsg = os.linesep.join(errmsg_lines)
+                raise ConfigurationError(errmsg) from None
+
         # Perform device discovery using UpnpPresence
         discovery_window = self._presence.discover_devices(
             limit_to=device_hints,
@@ -572,28 +650,36 @@ class UpnpCoordinator(CoordinatorBase):
         # Wait for discovery to complete
         discovery_window.wait()
 
-        # Process discovered devices
-        discovered_devices = discovery_window.discovered_devices
-        
-        for device_hint, device_detail in discovered_devices.items():
-            device_evidence = device_detail.device_evidence
-            
-            # Create device info structure compatible with existing code
-            device_info = {
-                MSearchKeys.IP: device_evidence.ip,
-                MSearchKeys.LOCATION: device_evidence.location,
-                MSearchKeys.USN_DEV: device_evidence.usn_dev,
-                MSearchKeys.USN_CLS: device_evidence.usn_cls,
-                MSearchKeys.ROUTES: {}
-            }
-            
-            found_devices[device_hint] = device_info
-            matching_devices[device_hint] = device_info
+        discovered_devices = discovery_window.devices_found
+
+        # Build a mapping of hints to discovered devices, matching one device per hint
+        # Required hints are matched first to ensure they are consumed before optional hints.
+        combined_hints = list(required_hints)
+        seen_hint_keys = {h.get_hint() for h in combined_hints}
+        for hint in device_hints:
+            hint_key = hint.get_hint()
+            if hint_key not in seen_hint_keys:
+                combined_hints.append(hint)
+                seen_hint_keys.add(hint_key)
+
+        matches = self._match_hints_to_discovered(combined_hints, discovered_devices)
+        query_hint_keys = {hint.get_hint() for hint in device_hints}
+        for hint, usn, device_info in matches:
+            found_devices[usn] = device_info
+            if hint.get_hint() in query_hint_keys:
+                matching_devices[usn] = device_info
+
+        # Add remaining discovered devices to the found list
+        for usn, device_detail in discovered_devices.items():
+            if usn not in found_devices:
+                found_devices[usn] = self._build_device_info_from_detail(device_detail)
 
         # Check for missing required devices
-        if required_devices is not None:
-            for devhint in required_devices:
-                if devhint not in matching_devices:
+        if required_hints:
+            matched_hint_ids = {id(hint) for hint, _usn, _info in matches}
+
+            for devhint in required_hints:
+                if id(devhint) not in matched_hint_ids:
                     missing_devices.append(devhint)
 
         if len(missing_devices) > 0:
@@ -610,10 +696,18 @@ class UpnpCoordinator(CoordinatorBase):
         config_lookup = lscape._internal_get_upnp_device_config_lookup_table() # pylint: disable=protected-access
 
         # Update root devices with discovered information
-        for dhint, dval in matching_devices.items():
+        for usn, dval in matching_devices.items():
             addr = dval[MSearchKeys.IP]
             location = dval[MSearchKeys.LOCATION]
-            self._update_root_device(lscape, config_lookup, addr, location, dhint, dval)
+            devhint = dval.get("HINT")
+            self._update_root_device(lscape, config_lookup, addr, location, devhint, dval)
+            usn = dval.get(MSearchKeys.USN)
+            if usn is None:
+                usn_dev = dval.get(MSearchKeys.USN_DEV)
+                usn_cls = dval.get(MSearchKeys.USN_CLS)
+                if usn_dev is not None and usn_cls is not None:
+                    usn = f"uuid:{usn_dev}::{usn_cls}"
+            self._register_root_device_notification(usn)
 
         # Setup watchlist devices
         if watchlist is not None and len(watchlist) > 0:
@@ -626,11 +720,11 @@ class UpnpCoordinator(CoordinatorBase):
 
         self._device_cache_update(matching_devices)
 
-        self._start_all_threads()
-
         self._found_devices = found_devices
         self._available_devices = matching_devices
         self._unavailable_devices = missing_devices
+
+        self._start_all_threads()
 
         return found_devices, matching_devices, missing_devices
 
@@ -638,9 +732,20 @@ class UpnpCoordinator(CoordinatorBase):
         """
             Shuts down the coordinator and cleans up resources including the UpnpPresence.
         """
+        registered_usns = []
+        self._coord_lock.acquire()
+        try:
+            registered_usns = list(self._cl_registered_root_device_notifications)
+            self._cl_registered_root_device_notifications.clear()
+        finally:
+            self._coord_lock.release()
+
         if self._presence is not None and self._presence.is_running:
             self._presence.stop()
             self._presence.cleanup()
+        if self._presence is not None:
+            for usn in registered_usns:
+                self._presence.unregister_root_device_notification_handler(usn, self._handle_root_device_notification)
 
         self._running = False
 
@@ -835,13 +940,21 @@ class UpnpCoordinator(CoordinatorBase):
             :param missing_devices: A list of USN(s) for devices that were not found.
         """
         devmsg_lines = ["FOUND DEVICES:"]
-        for dkey, _ in found_devices.items():
-            devmsg_lines.append("    %s" % dkey)
+        for dkey, dval in found_devices.items():
+            hint = dval.get("HINT") if isinstance(dval, dict) else None
+            if hint is not None:
+                devmsg_lines.append("    %s (hint=%s)" % (dkey, hint))
+            else:
+                devmsg_lines.append("    %s" % dkey)
         devmsg_lines.append("")
 
         devmsg_lines.append("MATCHING DEVICES:")
-        for dkey, _ in matching_devices.items():
-            devmsg_lines.append("    %s" % dkey)
+        for dkey, dval in matching_devices.items():
+            hint = dval.get("HINT") if isinstance(dval, dict) else None
+            if hint is not None:
+                devmsg_lines.append("    %s (hint=%s)" % (dkey, hint))
+            else:
+                devmsg_lines.append("    %s" % dkey)
         devmsg_lines.append("")
 
         if len(missing_devices) > 0:
@@ -914,6 +1027,112 @@ class UpnpCoordinator(CoordinatorBase):
 
         return
 
+    def _register_root_device_notification(self, usn: Optional[str]):
+        """
+            Register for root device notifications for a given USN.
+
+            :param usn: The full USN string for the device.
+        """
+        if self._presence is None or usn is None:
+            return
+
+        usn_device, usn_class = self._split_usn(usn)
+        if usn_device is not None and usn_class is not None:
+            usn = f"uuid:{usn_device}::{usn_class}"
+
+        should_register = False
+        self._coord_lock.acquire()
+        try:
+            if usn not in self._cl_registered_root_device_notifications:
+                self._cl_registered_root_device_notifications.add(usn)
+                should_register = True
+        finally:
+            self._coord_lock.release()
+
+        if should_register:
+            self._presence.register_root_device_notification_handler(usn, self._handle_root_device_notification)
+
+        return
+
+    def _split_usn(self, usn: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+            Split a USN string into device and class components.
+
+            :param usn: The USN string to split.
+
+            :returns: Tuple of (usn_device, usn_class).
+        """
+        usn_device = None
+        usn_class = None
+
+        if usn and "::" in usn:
+            parts = usn.split("::")
+            if len(parts) >= 1 and parts[0]:
+                usn_device = parts[0].lstrip("uuid:")
+            if len(parts) >= 2:
+                usn_class = parts[1]
+
+        return usn_device, usn_class
+
+    def _handle_root_device_notification(self, ifname: str, from_ip: str, usn: str, nt: str, nts: str, msg_info: dict):
+        """
+            Handles root device notifications received by the UpnpPresence.
+
+            :param ifname: Interface name the notification was received on.
+            :param from_ip: The IP address of the sender.
+            :param usn: The USN from the notification.
+            :param nt: The NT value from the notification.
+            :param nts: The NTS value from the notification.
+            :param msg_info: The parsed notification headers.
+        """
+        usn_device, usn_class = self._split_usn(usn)
+        if usn_device is None or usn_class is None:
+            self.logger.warning("Malformed USN in notification: %s", usn)
+            return
+
+        request_info = dict(msg_info)
+        request_info[MSearchKeys.IP] = from_ip
+        request_info[MSearchKeys.USN] = usn
+        request_info[MSearchKeys.USN_DEV] = usn_device
+        request_info[MSearchKeys.USN_CLS] = usn_class
+
+        if ifname is None:
+            ifname = get_interface_for_ip(from_ip)
+
+        if ifname is not None:
+            request_info[MSearchKeys.ROUTES] = {
+                ifname: {
+                    MSearchRouteKeys.IFNAME: ifname,
+                    MSearchRouteKeys.IP: from_ip
+                }
+            }
+
+        host = request_info.get("HOST", "")
+
+        if nts == "ssdp:alive" and usn_class == "upnp:rootdevice":
+            self._process_device_alive_notification(from_ip, usn_device, host, request_info)
+            self._coord_lock.acquire()
+            try:
+                if usn is not None:
+                    self._available_devices[usn] = request_info
+                    self._found_devices[usn] = request_info
+                if usn in self._unavailable_devices:
+                    self._unavailable_devices.remove(usn)
+            finally:
+                self._coord_lock.release()
+        elif nts == "ssdp:byebye" and usn_class == "upnp:rootdevice":
+            self._process_device_byebye_notification(from_ip, usn_device, host, request_info)
+            self._coord_lock.acquire()
+            try:
+                if usn in self._available_devices:
+                    del self._available_devices[usn]
+                if usn not in self._unavailable_devices:
+                    self._unavailable_devices.append(usn)
+            finally:
+                self._coord_lock.release()
+
+        return
+
     def _process_service_alive_notification(self, ip_addr, usn_device: str, usn_class: str, host: str, request_info: dict):
         """
             Handles a service alive notification for a UPNP service.
@@ -938,443 +1157,23 @@ class UpnpCoordinator(CoordinatorBase):
         """
         return
 
-    def _process_subscription_callback(self, ifname: str, claddr: str, asock: socket):
-        """
-            Processes a callback request on the specified interface and address request.
-
-            :param ifname: The name of the ifname the request came from.
-            :param claddr: The address of the client that made the callback.
-            :param asock: The socket connection for the callback request.
-        """
-        # pylint: disable=unused-argument
-
-        cbbuffer = BytesIO()
-
-        req_headers = None
-
-        headers_length = None
-        content_length = None
-
-        message_length = None
-        read_so_far = 0
-        remaining_length = 1024
-        try:
-            # Read To Header
-            while self._running and remaining_length > 0:
-                # Process the requests
-                nxtbuff = asock.recv(remaining_length)
-                read_so_far += len(nxtbuff)
-
-                # If we didn't get anything from recv, it means we hit the end of
-                # the pipe.  We can exit the read loop.
-                if len(nxtbuff) == 0:
-                    break
-
-                cbbuffer.write(nxtbuff)
-
-                if req_headers is None:
-                    current_content = cbbuffer.getvalue()
-                    header_end = current_content.find(HTTP1_1_END_OF_HEADER)
-                    if header_end > -1:
-                        header_content = current_content[:header_end]
-                        headers_length = len(header_content) + len(HTTP1_1_END_OF_HEADER)
-                        req_line, req_headers = http_parse_header(header_content)
-                        if "CONTENT-LENGTH" in req_headers:
-                            try:
-                                content_length = int(req_headers["CONTENT-LENGTH"])
-                                message_length = headers_length + content_length
-                            except (ValueError, TypeError) as ex:
-                                # Handle malformed Content-Length header gracefully
-                                self.logger.warning("Invalid Content-Length header value '%s': %s. Skipping content length parsing.", 
-                                             req_headers["CONTENT-LENGTH"], str(ex))
-                                content_length = None
-                                message_length = None
-                
-                if message_length is not None:
-                    remaining_length = message_length - read_so_far
-                    # Exit loop if we've read all expected data
-                    if remaining_length <= 0:
-                        break
-                
-                # If we reach here, processing was successful
-                processing_successful = True
-
-        finally:
-            # Only send success response if processing completed successfully
-            if 'processing_successful' in locals() and processing_successful:
-                try:
-                    asock.sendall(UPNP_SUBSCRIPTION_NOTIFY_RESPONSE_OK)
-                except Exception as send_ex:
-                    self.logger.warning("Failed to send success response: %s", send_ex)
-            
-            # Always attempt to close the socket, but handle errors gracefully
-            try:
-                asock.close()
-            except Exception as close_ex:
-                self.logger.debug("Error closing socket: %s", close_ex)
-
-        request = cbbuffer.getvalue()
-
-        cbbuffer.truncate(0)
-        cbbuffer.seek(0)
-
-        if headers_length is None:
-            self.logger.error("Callback message missing header terminator. claddr=%s", claddr)
-            return
-
-        req_body = request[headers_length:]
-
-        capture_to = None
-        self._coord_lock.acquire()
-        try:
-            if claddr in self._cl_callback_traffic_capture_from:
-                capture_to = [cc for cc in self._cl_callback_traffic_capture_from[claddr].values()]
-        finally:
-            self._coord_lock.release()
-
-        if capture_to is not None:
-            for cc in capture_to:
-                cc.append_capture(req_headers, req_body)
-
-        if "SID" in req_headers:
-            sid = req_headers["SID"]
-
-            device = None
-            #lookup the device that needs to handle this subscription
-            self._coord_lock.acquire()
-            try:
-                if sid in self._cl_subscription_id_to_device:
-                    device = self._cl_subscription_id_to_device[sid]
-            finally:
-                self._coord_lock.release()
-
-            if device is not None:
-                device.process_subscription_callback(claddr, sid, req_headers, req_body)
-            else:
-                errmsg = "Received subscription notification for unknown sid.  claddr={} sid={}".format(claddr, sid)
-                self.logger.error(errmsg)
-        else:
-            dbgmsg_lines = [
-                "Received subscription notification without an SID. claddr={}".format(claddr),
-                "REQUEST HEADERS:"
-            ]
-
-            for hdr_key, hdr_val in req_headers.items():
-                dbgmsg_lines.append("    {}:{}".format(hdr_key, hdr_val))
-
-            dbgmsg_lines.append("REQUEST BODY:")
-            dbgmsg_lines.append(req_body)
-
-            dbgmsg = os.linesep.join(dbgmsg_lines)
-
-            self.logger.debug(dbgmsg)
-
-        return
-
-    def _process_request_for_msearch(self, addr: str, request: str):
-        """
-            Process an msearch request from the given address.
-
-            :param addr: The address of machine making the msearch request.
-            :param request: The request content of the msearch request to process.
-        """
-        #reqinfo = msearch_parse_request(request)
-        self.logger.debug("RESPONDING TO MSEARCH")
-
-        return
-
-    def _process_request_for_notify(self, addr: str, request: str):
-        """
-            Process a notify request.
-
-            :param addr: The address of machine making the notify request.
-            :param request: The request content of the notify request to process.
-        """
-        req_headers, _ = notify_parse_request(request)
-
-        if req_headers is None:
-            self.logger.error("Failed to parse notify request from %s", addr)
-            return
-
-        if "USN" not in req_headers or "HOST" not in req_headers or "NTS" not in req_headers:
-            self.logger.error("Notify request missing required headers from %s", addr)
-            return
-
-        usn = req_headers["USN"]
-        host = req_headers["HOST"]
-        subtype = req_headers["NTS"]
-
-        ip_addr, _ = addr
-        if MSearchKeys.IP not in req_headers:
-            req_headers[MSearchKeys.IP] = ip_addr
-
-        if "::" in usn:
-            usn_parts = usn.split("::")
-            if len(usn_parts) >= 2 and usn_parts[0]:  # Ensure first part is not empty
-                usn_device = usn_parts[0].lstrip("uuid:")
-                usn_class = usn_parts[1]
-            else:
-                # Malformed USN (empty device part), log warning and skip processing
-                self.logger.warning("Malformed USN format '%s': device part is empty or missing", usn)
-                return
-
-            ifname = get_interface_for_ip(ip_addr)
-
-            req_headers[MSearchKeys.USN_DEV] = usn_device
-            req_headers[MSearchKeys.USN_CLS] = usn_class
-            req_headers[MSearchKeys.ROUTES] = {
-                ifname:
-                {
-                    MSearchRouteKeys.IFNAME: ifname,
-                    MSearchRouteKeys.IP: ip_addr
-                }
-            }
-
-            if subtype == "ssdp:alive":
-                if usn_class == "upnp:rootdevice":
-                    self._process_device_alive_notification(ip_addr, usn_device, host, req_headers)
-                else:
-                    self._process_service_alive_notification(ip_addr, usn_device, usn_class, host, req_headers)
-            elif subtype == "ssdp:byebye":
-                if usn_class == "upnp:rootdevice":
-                    self._process_device_byebye_notification(ip_addr, usn_device, host, req_headers)
-                else:
-                    self._process_service_byebye_notification(ip_addr, usn_device, usn_class, host, req_headers)
-            else:
-                self.logger.info("UNKNOWN NOTIFY - USN: %s HOST: %s SUBTYPE: %s" % (usn, host, subtype))
-
-        return
-
     def _start_all_threads(self):
         """
-            Starts up all the thread the UPNP coordinator uses for monitoring, callback notification servicing and
-            the worker threads used for processing work packges from notifications and callbacks.
+            Starts the UPnP coordinator in presence-driven mode.
         """
+        self._running = True
 
-        ifacelist = []
-        for wdev in self.watch_devices:
-            primary_route = wdev.upnp.primary_route
-            ifname = primary_route[MSearchRouteKeys.IFNAME]
-            if ifname not in ifacelist:
-                ifacelist.append(ifname)
-        ifacecount = len(ifacelist)
+        if self._presence is None:
+            return
 
-        self._coord_lock.acquire()
-        try:
-            sgate = threading.Event()
-
-            self._running = True
-
-            self._shutdown_gate = threading.Semaphore(self._worker_count + ifacecount + 1)
-
-            # Spin-up the worker threads first so they will be ready to handle work packets
-            for wkrid in range(0, self._worker_count):
-                sgate.clear()
-                wthread = threading.Thread(name="UpnpCoordinator - Worker(%d)" % wkrid, target=self._thread_entry_worker,
-                                                   daemon=True, args=(sgate,))
-                self._cl_worker_threads.append(wthread)
-
-                # Release the coordinator lock while starting up the thread so we are not holding it
-                # so the new thread can get access to register itself with internal UpnpCoordinator state
-                self._coord_lock.release()
-                try:
-                    wthread.start()
-                    sgate.wait()
-                finally:
-                    self._coord_lock.acquire()
-
-            # Spin-up the Monitor thread so it can monitor notification traffic
-            sgate.clear()
-            self._monitor_thread = threading.Thread(name="UpnpCoordinator - Monitor", target=self._thread_entry_monitor,
-                                                   daemon=True, args=(sgate,))
-            self._monitor_thread.start()
-            sgate.wait()
-
-            # Spin-up a Callback thread for each interface
-            self._cl_iface_callback_addr_lookup = {}
-
-            for ifaceidx in range(0, ifacecount):
-                ifname = ifacelist[ifaceidx]
-                sgate.clear()
-                cbthread = threading.Thread(name="UpnpCoordinator - Callback(%s)" % ifname, target=self._thread_entry_callback,
-                                                    daemon=True, args=(sgate, ifname))
-                self._cl_callback_threads.append(cbthread)
-
-                # Release the coordinator lock while starting up the thread so we are not holding it
-                # so the new thread can get access to register itself with internal UpnpCoordinator state
-                lock_released = False
-                try:
-                    self._coord_lock.release()
-                    lock_released = True
-                    cbthread.start()
-                    sgate.wait()
-                except Exception:
-                    self._running = False
-                    for _ in range(0, self._worker_count + ifacecount + 1):
-                        self._shutdown_gate.release()
-                    raise
-                finally:
-                    if lock_released:
-                        self._coord_lock.acquire()
-
-        except Exception:
-            self._running = False
-
-            for _ in range(0, self._worker_count + ifacecount + 1):
-                self._shutdown_gate.release()
-
-            raise
-        finally:
-            # Only release the lock if we currently hold it
-            try:
-                self._coord_lock.release()
-            except RuntimeError:
-                # Lock was not held, which is fine in error scenarios
-                pass
-
-        return
-
-    def _thread_entry_callback(self, sgate: threading.Event, ifname: str):
-        """
-            The entry point for callback processing threads.
-
-            :param sgate: The startup gate that is used to indicate to the thread spinning up the coordinator
-            that the callback thread has started.
-            :param ifname: The interface name of interface this thread is assigned to process callbacks for.
-        """
-        self._shutdown_gate.acquire()
-
-        try:
-            service_addr = ""
-
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-            try:
-                # Bind to port zero so we can get an ephimeral port address
-                sock.bind((service_addr, 0))
-
-                _, port = sock.getsockname()
-                host = get_ipv4_address(ifname)
-
-                iface_callback_addr = "%s:%s" % (host, port)
-
-                self._cl_iface_callback_addr_lookup[ifname] = iface_callback_addr
-                self._cl_callback_interface_sockets[ifname] = sock
-            except Exception:
-                # Clean up socket on error to prevent resource leak
-                try:
-                    sock.close()
-                except Exception:
-                    pass  # Ignore errors during cleanup
-                raise
-
-            # Set the start gate to allow the thread spinning us up to continue
-            sgate.set()
-
-            sock.listen(1)
-
-            while self._running:
-                asock, claddr = sock.accept()
-
-                # Queue the callback workpacket for dispatching by a worker thread
-                wkpacket = (self._process_subscription_callback, (ifname, claddr, asock))
-
-                self._queue_lock.acquire()
-                try:
-                    self._queue_work.append(wkpacket)
-                    self._queue_available.release()
-                finally:
-                    self._queue_lock.release()
-
-        finally:
-            self._shutdown_gate.release()
-
-        return
-
-    def _thread_entry_monitor(self, sgate: threading.Event):
-        """
-            The entry point for monitor thread.  The monitor thread sets up monitoring on all interfaces.
-
-            :param sgate: The startup gate that is used to indicate to the thread spinning up the coordinator
-            that the monitor thread has started.
-        """
-        self._shutdown_gate.acquire()
-
-        multicast_address = "239.255.255.250"  # SsdpProtocol.MULTICAST_ADDRESS
-        multicast_port = 1900  # SsdpProtocol.PORT
-
-        try:
-            # Set the start gate to allow the thread spinning us up to continue
-            sgate.set()
-
-            while self._running:
-                sock = create_multicast_socket(multicast_address, multicast_port)
-
-                try:
-                    
-                    while self._running:
-                        request, addr = sock.recvfrom(1024)
-
-                        if request.startswith(b"M-SEARCH"):
-                            if self._control_point:
-                                wkpacket = (self._process_request_for_msearch, (addr, request))
-                                self._queue_lock.acquire()
-                                try:
-                                    self._queue_work.append(wkpacket)
-                                    self._queue_available.release()
-                                finally:
-                                    self._queue_lock.release()
-                        elif request.startswith(b"NOTIFY"):
-                            wkpacket = (self._process_request_for_notify, (addr, request))
-                            self._queue_lock.acquire()
-                            try:
-                                self._queue_work.append(wkpacket)
-                                self._queue_available.release()
-                            finally:
-                                self._queue_lock.release()
-                        else:
-                            dbgmsg = b"UNKNOWN REQUEST TYPE:\n" + request
-                            dbgmsg = dbgmsg.decode("utf-8")
-                            self.logger.debug(dbgmsg)
-
-                finally:
-                    sock.close()
-
-        finally:
-            self._shutdown_gate.release()
-
-        return
-
-    def _thread_entry_worker(self, sgate: threading.Event):
-        """
-            The entry point for worker threads.  Worker threads process work packets queued up by other threads.
-
-            :param sgate: The startup gate that is used to indicate to the thread spinning up the coordinator
-            that this worker thread has started.
-        """
-        self._shutdown_gate.acquire()
-        
-        try:
-            # Set the start gate to allow the thread spinning us up to continue
-            sgate.set()
-
-            while self._running:
-                self._queue_available.acquire()
-
-                self._queue_lock.acquire()
-                try:
-                    if len(self._queue_work) > 0:
-                        wkfunc, wkargs = self._queue_work.pop(0)
-                        wkfunc(*wkargs)
-                    else:
-                        self.logger.warning("Worker thread acquired semaphore but queue is empty")
-                except Exception:  # Allow system exceptions like KeyboardInterrupt to propagate
-                    self.logger.exception("UpnpCoordinator: Worker exception.")
-                finally:
-                    self._queue_lock.release()
-
-        finally:
-            self._shutdown_gate.release()
+        for devinfo in self._available_devices.values():
+            usn = devinfo.get(MSearchKeys.USN)
+            if usn is None:
+                usn_dev = devinfo.get(MSearchKeys.USN_DEV)
+                usn_cls = devinfo.get(MSearchKeys.USN_CLS)
+                if usn_dev is not None and usn_cls is not None:
+                    usn = f"uuid:{usn_dev}::{usn_cls}"
+            self._register_root_device_notification(usn)
 
         return
 
@@ -1448,10 +1247,15 @@ class UpnpCoordinator(CoordinatorBase):
             :param devhint: The identifier hint used to identify the device.
         """
 
-        if MSearchKeys.USN_DEV in deviceinfo:
+        usn_dev = deviceinfo.get(MSearchKeys.USN_DEV)
+        if usn_dev:
             try:
-                usn_dev = deviceinfo[MSearchKeys.USN_DEV]
-                usn_cls = deviceinfo[MSearchKeys.USN_CLS]
+                usn_cls = deviceinfo.get(MSearchKeys.USN_CLS)
+                if usn_cls is None:
+                    usn_full = deviceinfo.get(MSearchKeys.USN)
+                    _, usn_cls = self._split_usn(usn_full)
+                if usn_cls is None:
+                    usn_cls = "upnp:rootdevice"
 
                 configinfo = None
                 if usn_dev in config_lookup:
@@ -1591,5 +1395,13 @@ class UpnpCoordinator(CoordinatorBase):
 
                 errmsg = os.linesep.join(errmsg_lines)
                 self.logger.debug(errmsg)
+
+        usn = deviceinfo.get(MSearchKeys.USN)
+        if usn is None:
+            usn_dev = deviceinfo.get(MSearchKeys.USN_DEV)
+            usn_cls = deviceinfo.get(MSearchKeys.USN_CLS)
+            if usn_dev is not None and usn_cls is not None:
+                usn = f"uuid:{usn_dev}::{usn_cls}"
+        self._register_root_device_notification(usn)
 
         return

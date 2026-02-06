@@ -13,7 +13,10 @@ __copyright__ = "Copyright 2025, Automation Mojo LLC"
 __credits__ = []
 
 
-from typing import Union
+from typing import Optional, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from automojo.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
 
 from automojo.interop.protocols.upnp.model.description.basic1devicedesc import Basic1DeviceDesc
 from automojo.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
@@ -24,15 +27,17 @@ class UpnpDeviceDetail:
         Class to represent UPnP device details.
     """
 
-    def __init__(self, description: Union[Basic1DeviceDesc, None], evidence: DeviceEvidence):
+    def __init__(self, description: Union[Basic1DeviceDesc, None], evidence: DeviceEvidence, hint: Optional["UpnpDeviceHint"] = None):
         """
             Initialize the UPnP device details.
 
             :param description: Parsed device description object or ``None``.
             :param evidence: Evidence about the UPnP device from discovery.
+            :param hint: Optional hint that matched this device.
         """
         self._evidence = evidence
         self._description = description
+        self._hint = hint
         return
     
     @property
@@ -52,6 +57,24 @@ class UpnpDeviceDetail:
             :returns: The last UPnP device description obtained for the device or ``None`` if a device description has not been obtained.
         """
         return self._description
+
+    @property
+    def hint(self) -> Optional["UpnpDeviceHint"]:
+        """
+            Get the hint that matched this device, if available.
+
+            :returns: The matching :class:`UpnpDeviceHint` or ``None``.
+        """
+        return self._hint
+
+    def set_hint(self, hint: Optional["UpnpDeviceHint"]):
+        """
+            Set the hint that matched this device.
+
+            :param hint: The matching :class:`UpnpDeviceHint` or ``None``.
+        """
+        self._hint = hint
+        return
     
     def generate_extension_key(self) -> str:
         """
