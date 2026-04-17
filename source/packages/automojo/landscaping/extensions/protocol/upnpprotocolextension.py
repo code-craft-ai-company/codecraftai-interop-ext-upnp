@@ -51,5 +51,5 @@ class UpnpProtocolExtension(UpnpRootDevice, ProtocolExtension):
             :param deviceinfo: The device information dictionary from the discovery process.
         """
         UpnpRootDevice.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
-        ProtocolExtension.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
+        ProtocolExtension.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo)
         return
