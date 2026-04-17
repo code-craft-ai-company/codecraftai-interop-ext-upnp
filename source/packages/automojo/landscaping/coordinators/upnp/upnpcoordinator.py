@@ -36,8 +36,8 @@ import automojo.interop.protocols.upnp as upnp_module
 
 from automojo.landscaping.coordinatorbase import CoordinatorBase
 from automojo.landscaping.landscapedevice import LandscapeDevice
-from automojo.landscaping.protocolextensions.upnpprotocolextension import UpnpProtocolExtension
-from automojo.landscaping.protocolextensions.protocolextension import ProtocolExtension
+from automojo.landscaping.extensions.protocol.upnpprotocolextension import UpnpProtocolExtension
+from automojo.landscaping.extensions.protocol.protocolextension import ProtocolExtension
 
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import device_description_load

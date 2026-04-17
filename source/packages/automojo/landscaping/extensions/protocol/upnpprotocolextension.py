@@ -14,7 +14,7 @@ from typing import Optional
 
 import weakref
 
-from automojo.landscaping.protocolextensions.protocolextension import ProtocolExtension
+from automojo.landscaping.extensions.protocol.protocolextension import ProtocolExtension
 
 from automojo.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
 from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
