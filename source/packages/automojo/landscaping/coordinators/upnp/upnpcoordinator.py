@@ -762,13 +762,14 @@ class UpnpCoordinator(CoordinatorBase):
         """
         raise NotImplementedError("Device wakeup functionality is not yet implemented for UPnP coordinator")
 
-    def _create_root_device(self, manufacturer: str, model_number: str, model_description: str) -> UpnpRootDevice:
+    def _create_root_device(self, manufacturer: str, model_name: str, model_number: str, model_description: str) -> UpnpRootDevice:
         """
             Create a root UPNP device using the provided manufacturer and modelNumber provided.  If no
             device is found for the provided manufacturer and model_number then a generic UPNP root device
             will be instantiated using the manufacturer, model_number and model_description.
 
             :param manufacturer: The manufacturer of the root device to instantiate.
+            :param model_name: The modelName of the root device to instantiate.
             :param model_number: The model_number of the root device to instantiate.
             :param model_description: The description to give to a device when it is instantiated.
 
@@ -787,9 +788,9 @@ class UpnpCoordinator(CoordinatorBase):
         device_desc = Basic1DeviceDesc(
             specVersion=spec_version,
             deviceType="urn:schemas-upnp-org:device:Basic:1",
-            friendlyName=f"{manufacturer} {model_number}",
+            friendlyName=f"{manufacturer} {model_name}",
             manufacturer=manufacturer,
-            modelName=model_number,
+            modelName=model_name,
             modelNumber=model_number,
             modelDescription=model_description,
             UDN=f"uuid:{self._local_udn}",
@@ -1284,13 +1285,14 @@ class UpnpCoordinator(CoordinatorBase):
                             try:
                                 try:
                                     # We create the device
-                                    dev_extension = self._create_root_device(manufacturer, modelNumber, modelDescription)
+                                    dev_extension = self._create_root_device(manufacturer, modelName, modelNumber, modelDescription)
                                 except Exception:
                                     # Handle potential None values in error message formatting
                                     mfg_str = manufacturer if manufacturer is not None else "<unknown>"
+                                    name_str = modelName if modelName is not None else "<unknown>"
                                     model_str = modelNumber if modelNumber is not None else "<unknown>"
                                     desc_str = modelDescription if modelDescription is not None else "<unknown>"
-                                    errmsg = "ERROR: Unable to create device mfg=%s model=%s desc=%s\nTRACEBACK:\n" % (mfg_str, model_str, desc_str)
+                                    errmsg = "ERROR: Unable to create device mfg=%s name=%s model=%s desc=%s\nTRACEBACK:\n" % (mfg_str, name_str, model_str, desc_str)
                                     errmsg += traceback.format_exc()
                                     self.logger.error(errmsg)
                                     raise
