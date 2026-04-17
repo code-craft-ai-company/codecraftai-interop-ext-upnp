@@ -1378,7 +1378,7 @@ class UpnpCoordinator(CoordinatorBase):
                         errmsg_lines.append("    %s: %s" % (k, v))
 
                     errmsg = os.linesep.join(errmsg_lines)
-                    self.logger.debug(errmsg)
+                    self.logger.error(errmsg)
 
             except SemanticError:
                 # Always allow semantic errors to propagate, semantic errors represent
@@ -1396,7 +1396,7 @@ class UpnpCoordinator(CoordinatorBase):
                     errmsg_lines.append("    %s: %s" % (k, v))
 
                 errmsg = os.linesep.join(errmsg_lines)
-                self.logger.debug(errmsg)
+                self.logger.error(errmsg)
 
         usn = deviceinfo.get(MSearchKeys.USN)
         if usn is None:
