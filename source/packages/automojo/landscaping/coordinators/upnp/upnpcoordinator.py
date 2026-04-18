@@ -840,7 +840,7 @@ class UpnpCoordinator(CoordinatorBase):
                         # Call base class initialize (UpnpRootDevice logic)
                         base_cls.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo)
                         # Call ProtocolExtension initialize (Extension logic)
-                        ProtocolExtension.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo)
+                        ProtocolExtension.initialize(self, coord_ref, basedevice_ref, extid, location, configinfo, deviceinfo=deviceinfo)
 
                     # Define the __init__ wrapper to handle initialization
                     def init_wrapper(self, device_detail, presence=None):
