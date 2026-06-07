@@ -19,7 +19,7 @@ from automojo.interop.protocols.upnp.generation.upnpscan import (
 )
 
 from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
-from automojo.runtime.runtimevariables import AM_RUNTIME_VARIABLES
+from automojo.thisapp.runtimevariables import AM_RUNTIME_VARIABLES
 
 @click.command("scan")
 @click.option("--window-length", default=30.0, help="Specify a scan window length in seconds.")
