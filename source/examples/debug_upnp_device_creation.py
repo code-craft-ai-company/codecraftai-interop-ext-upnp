@@ -1,10 +1,10 @@
 
 import time
 
-from automojo.presence.wellknown import ConfiguredSuperFactorySingleton
+from ccai.presence.wellknown import ConfiguredSuperFactorySingleton
 
-from automojo.interop.protocols.upnp.upnppresence import UpnpPresence
-from automojo.interop.protocols.upnp.model.devices.upnpdevicefactory import UpnpDeviceFactory
+from ccai.interop.protocols.upnp.upnppresence import UpnpPresence
+from ccai.interop.protocols.upnp.model.devices.upnpdevicefactory import UpnpDeviceFactory
 
 def main_debug_upnp_discovery():
     """
@@ -12,7 +12,7 @@ def main_debug_upnp_discovery():
     """
 
     super_factory = ConfiguredSuperFactorySingleton()
-    super_factory.add_factory_module("automojo.interop.manufacturers.bose.boseupnpextension")
+    super_factory.add_factory_module("ccai.interop.manufacturers.bose.boseupnpextension")
 
     scanner = UpnpPresence()
     

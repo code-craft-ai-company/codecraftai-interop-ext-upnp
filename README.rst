@@ -1,8 +1,8 @@
 =========================================
-Automation Mojo Interop Extension: UPnP
+Code Craft AI Interop Extension: UPnP
 =========================================
 
-The ``automojo-interop-ext-upnp`` package is a UPnP extension for the ``automojo-interop`` and ``automojo-landscaping`` frameworks. It plugs into the extension points exposed by ``automojo-extension``, ``automojo-interop``, and ``automojo-landscaping`` to add UPnP-aware protocol handlers, device discovery, service proxies, and landscaping coordinators without modifying the host packages.
+The ``codecraftai-interop-ext-upnp`` package is a UPnP extension for the ``codecraftai-interop`` and ``codecraftai-landscaping`` frameworks. It plugs into the extension points exposed by ``codecraftai-extension``, ``codecraftai-interop``, and ``codecraftai-landscaping`` to add UPnP-aware protocol handlers, device discovery, service proxies, and landscaping coordinators without modifying the host packages.
 
 Highlights
 ==========
@@ -20,7 +20,7 @@ Repository Structure
 - ``development/`` - Runtime environment scripts.
 - ``repository-setup/`` - Repository homing and setup scripts.
 - ``source/packages/`` - Package source code.
-- ``source/testroots/automojo/`` - TestBase test roots.
+- ``source/testroots/ccai/`` - TestBase test roots.
 - ``source/examples/`` - Example UPnP usage.
 - ``userguide/`` - Standards, conventions, and documentation.
 
@@ -53,7 +53,7 @@ Run the single-host test suite:
 
 .. code-block:: bash
 
-   testbase testing run --root source/testroots/automojo --includes=automojo.tests.singlehost --output=./.output
+   testbase testing run --root source/testroots/ccai --includes=ccai.tests.singlehost --output=./.output
 
 Standards and Conventions
 =========================

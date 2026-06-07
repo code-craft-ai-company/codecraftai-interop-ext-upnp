@@ -1,6 +1,6 @@
 [tool.poetry]
-name = "automojo-interop-ext-upnp"
-description = "Automation Mojo - Upnp InterOp Extensions"
+name = "codecraftai-interop-ext-upnp"
+description = "Code Craft AI - Upnp InterOp Extensions"
 version = "0.0.1"
 authors = []
 readme = "README.rst"
@@ -13,13 +13,13 @@ classifiers = [
 keywords = [
     "python"
 ]
-packages = [{include="automojo", from="source/packages"}]
+packages = [{include="ccai", from="source/packages"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
-automojo-interop = { git = "https://github.com/automationmojo/automojo-interop.git", branch = "main" }
-automojo-landscaping = { git = "https://github.com/automationmojo/automojo-landscaping.git", branch = "main" }
-automojo-this-app = { git = "https://github.com/automationmojo/automojo-this-app.git", branch = "main" }
+codecraftai-interop = { git = "https://github.com/automationmojo/codecraftai-interop.git", branch = "main" }
+codecraftai-landscaping = { git = "https://github.com/automationmojo/codecraftai-landscaping.git", branch = "main" }
+codecraftai-this-app = { git = "https://github.com/automationmojo/codecraftai-this-app.git", branch = "main" }
 
 [tool.poetry.group.dev.dependencies]
 
