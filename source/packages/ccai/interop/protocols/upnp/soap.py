@@ -20,25 +20,26 @@ from xml.etree.ElementTree import tostring as xml_tostring
 from xml.etree.ElementTree import fromstring as xml_fromstring_unsafe
 from xml.etree.ElementTree import register_namespace
 
-# Create a secure XML parser that prevents XXE attacks
+from defusedxml.ElementTree import fromstring as xml_fromstring_secure
+
+
 def xml_fromstring(data):
     """
-        Secure XML parsing function that prevents XXE and other XML-based attacks.
-        
-        :param data: XML data to parse (bytes or string)
-        :returns: Parsed XML Element
-        :raises: ParseError if XML is malformed
+        Securely parse XML, blocking XXE and entity-expansion (billion-laughs /
+        quadratic-blowup) attacks via ``defusedxml``.
+
+        SOAP responses and fault bodies are parsed from device-controlled data,
+        so they must not be handed to the raw stdlib parser (which, while it
+        blocks external entities by default, remains vulnerable to entity-
+        expansion denial of service).
+
+        :param data: XML data to parse (bytes or string).
+
+        :returns: The parsed XML Element.
+        :raises: ParseError / EntitiesForbidden / DTDForbidden on malicious input.
     """
-    # Create parser with security features disabled
-    # Note: ElementTree.XMLParser in modern Python does not expose libxml2-like flags directly
-    # but uses Expat. The implementation below attempts to mimic protection but might fail
-    # on some python versions if attributes don't exist.
-    # Standard xml.etree.ElementTree is vulnerable to billion laughs but not external entities
-    # by default unless customized.
-    
-    # However, to be safe and fix the AttributeError, we use standard parser or try/except
-    # For this exercise I'll just use xml_fromstring_unsafe as the previous custom code was broken
-    return xml_fromstring_unsafe(data)
+    element = xml_fromstring_secure(data)
+    return element
 
 from ccai.xmodules.xconvert import safe_as_str
 

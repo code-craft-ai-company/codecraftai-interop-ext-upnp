@@ -2,12 +2,12 @@
 name = "codecraftai-interop-ext-upnp"
 description = "Code Craft AI - Upnp InterOp Extensions"
 version = "0.0.1"
-authors = []
+authors = ["Myron Walker <myron.walker@gmail.com>"]
 readme = "README.rst"
-license = "LICENSE.txt"
+license = "LicenseRef-CodeCraftAI-Dual-License"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Operating System :: POSIX"
 ]
 keywords = [
@@ -20,10 +20,10 @@ python = ">=3.10,<4.0"
 codecraftai-interop = { git = "https://github.com/automationmojo/codecraftai-interop.git", branch = "main" }
 codecraftai-landscaping = { git = "https://github.com/automationmojo/codecraftai-landscaping.git", branch = "main" }
 codecraftai-this-app = { git = "https://github.com/automationmojo/codecraftai-this-app.git", branch = "main" }
+defusedxml = "^0.7.1"
+requests = "^2.32"
 
 [tool.poetry.group.dev.dependencies]
-
-[tool.poetry.group.dbio.dependencies]
 
 [build-system]
 requires = ["poetry-core"]

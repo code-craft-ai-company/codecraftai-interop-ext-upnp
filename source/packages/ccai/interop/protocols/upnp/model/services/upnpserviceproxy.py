@@ -103,7 +103,7 @@ class UpnpServiceProxy(EventedVariableSink):
         self._logged_events = None
         if self.SERVICE_TYPE is not None:
             this_app = ThisApplicationSingleton()
-            ctx = this_app.ctx
+            ctx = this_app.context
             logged_events_by_service = ctx.lookup(ContextPaths.UPNP_LOGGED_EVENTS)
             if logged_events_by_service is not None and self.SERVICE_TYPE in logged_events_by_service:
                 self._logged_events = logged_events_by_service[self.SERVICE_TYPE]

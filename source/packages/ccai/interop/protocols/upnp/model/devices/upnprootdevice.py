@@ -453,6 +453,7 @@ class UpnpRootDevice(UpnpDeviceBase):
 
         sub_sid = None
         sub_expires = None
+        existing_sub_sid = None
 
         if len(service.SERVICE_EVENT_VARIABLES) > 0:
             service_type = service.SERVICE_TYPE
@@ -501,8 +502,8 @@ class UpnpRootDevice(UpnpDeviceBase):
 
                 custom_headers = self.get_custom_subscribe_headers()
                 previous_sid = None
-                if renew and sid is not None:
-                    previous_sid = sid
+                if renew and existing_sub_sid is not None:
+                    previous_sid = existing_sub_sid
 
                 sub_sid, sub_expires = presence.service_subscribe(
                     host_ip,
@@ -907,7 +908,7 @@ class UpnpRootDevice(UpnpDeviceBase):
         """
 
         for svc_name in self.SERVICE_NAMES:
-            svc = self.lookup_service(self.MANUFACTURER, svc_name, allow_none=True, factory=factory)
+            svc = self.lookup_service(svc_name, allow_none=True, factory=factory)
             if svc is not None:
                 try:
                     self.subscribe_to_events(svc)

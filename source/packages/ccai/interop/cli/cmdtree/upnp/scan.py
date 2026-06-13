@@ -6,7 +6,7 @@ import sys
 
 import click
 
-from ccai.presence.wellknown import ConfiguredSuperFactorySingleton
+from ccai.thisapp.wellknown import ConfiguredSuperFactorySingleton
 
 from ccai.interop.constants import DEFAULT_INCLUDED_FACTORY_MODULES
 from ccai.interop.protocols.upnp.generation.common import (
@@ -19,7 +19,7 @@ from ccai.interop.protocols.upnp.generation.upnpscan import (
 )
 
 from ccai.interop.protocols.upnp.upnppresence import UpnpPresence
-from ccai.thisapp.runtimevariables import AM_RUNTIME_VARIABLES
+from ccai.thisapp.runtimevariables import RuntimeVariables
 
 @click.command("scan")
 @click.option("--window-length", default=30.0, help="Specify a scan window length in seconds.")
@@ -41,14 +41,14 @@ def command_am_interop_upnp_scan(window_length: float, factory_modules: List[str
     disco_window = scanner.discover_devices(window_length=window_length)
     disco_window.wait()
 
-    device_scan_directory = os.path.join(AM_RUNTIME_VARIABLES.AM_PRESENCE_DIRECTORY, "scan", "upnp", "devices")
+    device_scan_directory = os.path.join(RuntimeVariables.AM_PRESENCE_DIR, "scan", "upnp", "devices")
     try:
         os.makedirs(device_scan_directory, exist_ok=True)
     except OSError as ex:
         print(f"ERROR: Failed to create device scan directory '{device_scan_directory}': {ex}")
         sys.exit(1)
     
-    service_scan_directory = os.path.join(AM_RUNTIME_VARIABLES.AM_PRESENCE_DIRECTORY, "scan", "upnp", "services")
+    service_scan_directory = os.path.join(RuntimeVariables.AM_PRESENCE_DIR, "scan", "upnp", "services")
     try:
         os.makedirs(service_scan_directory, exist_ok=True)
     except OSError as ex:

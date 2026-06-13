@@ -882,7 +882,12 @@ class UpnpCoordinator(CoordinatorBase):
 
         for fdev_usn in found_device:
             fdev_info = found_device[fdev_usn]
-            fdev_filename = os.path.join(self._upnp_cache_dir, fdev_usn)
+            # The USN is device-controlled (SSDP NOTIFY / M-SEARCH replies), so it
+            # must be sanitized before use as a filename. Replacing path separators
+            # neutralizes both "../" traversal and absolute-path overrides, keeping
+            # the write inside the cache directory.
+            safe_usn = fdev_usn.replace(os.sep, "_").replace("/", "_").replace("\\", "_")
+            fdev_filename = os.path.join(self._upnp_cache_dir, safe_usn)
             with open(fdev_filename, 'w') as dcf:
                 yaml.dump(fdev_info, dcf)
 

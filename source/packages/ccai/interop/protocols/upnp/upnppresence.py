@@ -1011,7 +1011,7 @@ class UpnpPresence:
         if custom_headers is not None:
             headers.update(custom_headers)
 
-        resp: requests.Response = requests.request("SUBSCRIBE", subscribe_url, headers=headers)
+        resp: requests.Response = requests.request("SUBSCRIBE", subscribe_url, headers=headers, timeout=30)
 
         if resp.status_code == 200:
             #============================== Example Expected Response Headers ==============================
@@ -1098,7 +1098,7 @@ class UpnpPresence:
         if custom_headers is not None:
             headers.update(custom_headers)
             
-        resp: requests.Response = requests.request("UNSUBSCRIBE", subscribe_url, headers=headers)
+        resp: requests.Response = requests.request("UNSUBSCRIBE", subscribe_url, headers=headers, timeout=30)
         if resp.status_code != 200 and resp.status_code != 412:
             ctxmsg = "Error while unsubscribing from service."
             raise_for_http_status(resp.status_code, resp.content, ctxmsg)
