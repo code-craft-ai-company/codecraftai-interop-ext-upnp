@@ -17,6 +17,8 @@ from typing import List, Optional
 
 import logging
 
+from ccai.aspects.aspects import Aspects as AspectsBase
+
 from ccai.interop.aspects import (
     Aspects,
     ActionPattern,
@@ -39,7 +41,7 @@ UPNP_CALL_COMPLETION_INTERVAL = 5
 UPNP_CALL_INACTIVITY_TIMEOUT = 30
 UPNP_CALL_INACTIVITY_INTERVAL = 1
 
-class AspectsUPnP:
+class AspectsUPnP(AspectsBase):
     """
         Default aspects configuration for UPnP protocol operations.
     """
@@ -69,9 +71,9 @@ class AspectsUPnP:
             :param must_connect: ``True`` if connection failures should raise.
             :param logger: Optional logger for diagnostics.
         """
+        super().__init__(completion_interval=completion_interval, completion_timeout=completion_timeout)
+
         self.action_pattern=action_pattern
-        self.completion_timeout=completion_timeout
-        self.completion_interval=completion_interval
         self.inactivity_timeout=inactivity_timeout
         self.inactivity_interval=inactivity_interval
         self.monitor_delay=monitor_delay

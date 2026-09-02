@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "codecraftai-interop-ext-upnp"
 description = "Code Craft AI - Upnp InterOp Extensions"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Myron Walker <myron.walker@gmail.com>"]
 readme = "README.rst"
 license = "LicenseRef-CodeCraftAI-Dual-License"
@@ -17,6 +17,7 @@ packages = [{include="ccai", from="source/packages"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
+codecraftai-foundations = { version = "<2.0.0", source = "codecraftai" }
 codecraftai-interop = { version = "<2.0.0", source = "codecraftai" }
 codecraftai-landscaping = { version = "<2.0.0", source = "codecraftai" }
 codecraftai-this-app = { version = "<2.0.0", source = "codecraftai" }
