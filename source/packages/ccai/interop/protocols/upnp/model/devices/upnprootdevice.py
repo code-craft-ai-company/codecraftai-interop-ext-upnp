@@ -510,8 +510,25 @@ class UpnpRootDevice(UpnpDeviceBase):
                     subscribe_url,
                     timeout,
                     self.process_subscription_callback,
-                    custom_headers=custom_headers
+                    custom_headers=custom_headers,
+                    sid=previous_sid,
+                    renew=renew
                 )
+
+                if sub_sid is None and previous_sid is not None:
+                    # The device refused to renew the existing subscription (it may have expired on the device
+                    # side). Drop the stale identifier and subscribe afresh so event delivery is not lost.
+                    with self._device_lock:
+                        self._sid_to_service_lookup.pop(previous_sid, None)
+                        self._unregister_subscription_mapping(previous_sid)
+                    previous_sid = None
+                    sub_sid, sub_expires = presence.service_subscribe(
+                        host_ip,
+                        subscribe_url,
+                        timeout,
+                        self.process_subscription_callback,
+                        custom_headers=custom_headers
+                    )
 
                 with self._device_lock:
                     if sub_sid is not None:

@@ -97,7 +97,7 @@ def test_service_subscribe_renew_uses_sid_headers() -> None:
             testbase.assert_equal("CALLBACK" in captured_headers[-1], False)
             testbase.assert_equal("NT" in captured_headers[-1], False)
             testbase.assert_equal(captured_headers[-1]["SID"], "uuid:existing")
-            testbase.assert_equal(captured_headers[-1]["TIMEOUT"], "Seconds-10")
+            testbase.assert_equal(captured_headers[-1]["TIMEOUT"], "Second-10")
         finally:
             pres.stop()
             pres.cleanup()

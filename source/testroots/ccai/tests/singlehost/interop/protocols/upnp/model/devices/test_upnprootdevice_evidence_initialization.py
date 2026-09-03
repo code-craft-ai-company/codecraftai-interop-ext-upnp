@@ -4,51 +4,27 @@ from unittest.mock import MagicMock
 import weakref
 
 # Mock ccai.xmodules
-mock_xmodules = MagicMock()
 mock_logger = MagicMock()
-mock_xmodules.xlogging.enhancedloggers.getEnhancedLogger.return_value = mock_logger
-sys.modules['ccai.xmodules'] = mock_xmodules
-sys.modules['ccai.xmodules.xlogging'] = mock_xmodules.xlogging
-sys.modules['ccai.xmodules.xlogging.enhancedloggers'] = mock_xmodules.xlogging.enhancedloggers
-sys.modules['ccai.xmodules.xlogging.monitoredscope'] = MagicMock()
-sys.modules['ccai.xmodules.eventing'] = MagicMock()
-sys.modules['ccai.xmodules.eventing.eventedvariablesink'] = MagicMock()
-sys.modules['ccai.xmodules.eventing.eventedvariable'] = MagicMock()
-sys.modules['ccai.xmodules.eventing.enumerations'] = MagicMock()
-sys.modules['ccai.xmodules.xconvert'] = MagicMock()
 
 # Mock ccai.errors
 mock_errors = MagicMock()
-sys.modules['ccai.errors'] = mock_errors
-sys.modules['ccai.errors.exceptions'] = MagicMock()
-sys.modules['ccai.errors.raising'] = MagicMock()
-sys.modules['ccai.errors.xtraceback'] = MagicMock()
 
 # Mock ccai.interop.constants
 mock_interop_constants = MagicMock()
 mock_interop_constants.DIR_CCAI_INTEROP = "/tmp/ccai/interop"
-sys.modules['ccai.interop.constants'] = mock_interop_constants
 
 # Mock ccai.interop.aspects
 mock_interop_aspects = MagicMock()
-sys.modules['ccai.interop.aspects'] = mock_interop_aspects
 
 # Mock ccai.networking
 mock_networking = MagicMock()
 mock_networking.constants.HTTP1_1_LINESEP = b'\r\n'
-sys.modules['ccai.networking'] = mock_networking
-sys.modules['ccai.networking.constants'] = mock_networking.constants
 
 # Mock ccai.waiting
 mock_waiting = MagicMock()
-sys.modules['ccai.waiting'] = mock_waiting
-sys.modules['ccai.waiting.waitmodel'] = MagicMock()
 
 # Mock ccai.thisapp
 mock_thisapp = MagicMock()
-sys.modules['ccai.thisapp'] = mock_thisapp
-sys.modules['ccai.thisapp.contextpaths'] = MagicMock()
-sys.modules['ccai.thisapp.wellknown'] = MagicMock()
 
 # Mock UpnpServiceProxy
 class MockUpnpServiceProxy:
@@ -56,16 +32,12 @@ class MockUpnpServiceProxy:
 
 mock_service_proxy_module = MagicMock()
 mock_service_proxy_module.UpnpServiceProxy = MockUpnpServiceProxy
-sys.modules['ccai.interop.protocols.upnp.model.services.upnpserviceproxy'] = mock_service_proxy_module
 
 # Mock requests
 mock_requests = MagicMock()
-sys.modules['requests'] = mock_requests
 mock_requests_compat = MagicMock()
 from urllib.parse import urljoin
 mock_requests_compat.urljoin = urljoin
-sys.modules['requests.compat'] = mock_requests_compat
-sys.modules['requests.exceptions'] = MagicMock()
 
 
 from ccai.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice

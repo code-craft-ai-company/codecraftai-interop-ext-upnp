@@ -7,73 +7,9 @@ from xml.etree.ElementTree import Element
 import types
 
 # Ensure source/packages is in sys.path
-sys.path.insert(0, os.path.abspath("source/packages"))
 
-# --- Mocking missing dependencies ---
-# These mocks are necessary because the environment lacks external dependencies
-# like codecraftai-xmodules, codecraftai-interop, etc.
-
-# Mock ccai.xmodules
-if "ccai.xmodules" not in sys.modules:
-    sys.modules["ccai.xmodules"] = MagicMock()
-    sys.modules["ccai.xmodules.xlogging"] = MagicMock()
-    sys.modules["ccai.xmodules.xlogging.enhancedloggers"] = MagicMock()
-    sys.modules["ccai.xmodules.xlogging.enhancedloggers"].getEnhancedLogger = MagicMock(return_value=MagicMock())
-    sys.modules["ccai.xmodules.xlogging.monitoredscope"] = MagicMock()
-
-    sys.modules["ccai.xmodules.eventing"] = MagicMock()
-    sys.modules["ccai.xmodules.eventing.eventedvariablesink"] = MagicMock()
-    sys.modules["ccai.xmodules.eventing.eventedvariable"] = MagicMock()
-    sys.modules["ccai.xmodules.eventing.enumerations"] = MagicMock()
-
-    sys.modules["ccai.xmodules.xconvert"] = MagicMock()
-
-# Mock ccai.networking
-if "ccai.networking" not in sys.modules:
-    sys.modules["ccai.networking"] = MagicMock()
-    networking_constants = types.ModuleType("ccai.networking.constants")
-    networking_constants.HTTP1_1_LINESEP = b"\r\n"
-    sys.modules["ccai.networking.constants"] = networking_constants
-    sys.modules["ccai.networking.multicast"] = MagicMock()
-    sys.modules["ccai.networking.interfaces"] = MagicMock()
-
-# Mock ccai.errors
-if "ccai.errors" not in sys.modules:
-    sys.modules["ccai.errors"] = MagicMock()
-    sys.modules["ccai.errors.exceptions"] = MagicMock()
-    sys.modules["ccai.errors.raising"] = MagicMock()
-    sys.modules["ccai.errors.xtraceback"] = MagicMock()
-
-# Mock ccai.waiting
-if "ccai.waiting" not in sys.modules:
-    sys.modules["ccai.waiting"] = MagicMock()
-    sys.modules["ccai.waiting.waitmodel"] = MagicMock()
-
-# Mock ccai.thisapp
-if "ccai.thisapp" not in sys.modules:
-    sys.modules["ccai.thisapp"] = MagicMock()
-    sys.modules["ccai.thisapp.contextpaths"] = MagicMock()
-    sys.modules["ccai.thisapp.wellknown"] = MagicMock()
-
-# Mock ccai.interop.constants
-if "ccai.interop.constants" not in sys.modules:
-    constants_mock = types.ModuleType("ccai.interop.constants")
-    constants_mock.DIR_CCAI_INTEROP = "/tmp"
-    sys.modules["ccai.interop.constants"] = constants_mock
-
-# Mock ccai.interop.aspects
-if "ccai.interop.aspects" not in sys.modules:
-    sys.modules["ccai.interop.aspects"] = MagicMock()
-
-# Unconditionally mock UpnpServiceProxy to avoid it being a MagicMock which causes issues with typing module
-class MockUpnpServiceProxy:
-    pass
-
-upnpserviceproxy_mock = types.ModuleType("ccai.interop.protocols.upnp.model.services.upnpserviceproxy")
-upnpserviceproxy_mock.UpnpServiceProxy = MockUpnpServiceProxy
-sys.modules["ccai.interop.protocols.upnp.model.services.upnpserviceproxy"] = upnpserviceproxy_mock
-
-# --- End Mocking ---
+# The package's dependencies are installed by the environment; nothing is mocked at module scope,
+# because injecting fakes into sys.modules poisons every module imported after this one.
 
 from ccai.interop.protocols.upnp.model.devices.upnprootdevice import UpnpRootDevice
 from ccai.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
