@@ -18,8 +18,6 @@ from ccai.thisapp.appvardesc import AppVarDesc, VariableSource
 from ccai.thisapp.appvaraccessor import AppVarAccessor
 from ccai.thisapp.personavariables import PersonaVariables
 
-from ccai.thisapp.wellknown import ThisApplicationSingleton
-
 
 DIR_UPNP = os.path.dirname(__file__)
 

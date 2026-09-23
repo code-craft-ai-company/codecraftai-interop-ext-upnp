@@ -309,7 +309,6 @@ class DeviceDetailMapper:
                     propEl = nxtEl.find("deviceType", namespaces=namespaces)
                     if propEl is None or propEl.text is None:
                         raise ValueError("Embedded device missing required 'deviceType' element")
-                    deviceType = propEl.text
 
                     svcInfo = cls._process_device(root_el, nxtEl, namespaces, specVersion, is_embedded=True)
                     

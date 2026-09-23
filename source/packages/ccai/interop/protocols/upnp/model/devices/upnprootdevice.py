@@ -31,12 +31,9 @@ import requests
 
 from requests.compat import urljoin
 
-from ccai.errors.exceptions import  ProtocolError
-
 from ccai.interop.protocols.upnp.constants import MSearchKeys, MSearchRouteKeys, UPNP_DEVICE1_NAMESPACE
-from ccai.interop.protocols.upnp.upnperrors import UpnpError
 from ccai.interop.protocols.upnp.aliases import StrSvcId, StrSvcType
-from ccai.interop.protocols.upnp.constants import TIMEDELTA_RENEWAL_WINDOW, UPNP_HEADERS
+from ccai.interop.protocols.upnp.constants import TIMEDELTA_RENEWAL_WINDOW
 from ccai.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
 from ccai.interop.protocols.upnp.model.description.embeddeddevicedesc import EmbeddedDeviceDesc
 from ccai.interop.protocols.upnp.model.devices.upnpdevicebase import UpnpDeviceBase
@@ -49,8 +46,6 @@ from ccai.interop.protocols.upnp.soap import NS_UPNP_EVENT
 from ccai.interop.protocols.upnp.model.services.upnpserviceproxy import UpnpServiceProxy
 
 import ccai.interop.protocols.upnp as upnp_module
-
-from ccai.errors.raising import raise_for_http_status
 
 
 # Types imported only for type checking purposes

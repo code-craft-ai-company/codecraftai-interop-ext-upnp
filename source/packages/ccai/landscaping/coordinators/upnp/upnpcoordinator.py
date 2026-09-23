@@ -47,13 +47,13 @@ from ccai.interop.protocols.upnp.model.devices.upnpdevicefactory import UpnpDevi
 from ccai.interop.protocols.upnp.upnppresence import UpnpPresence
 from ccai.interop.protocols.upnp.constants import MSearchKeys, MSearchRouteKeys
 from ccai.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
-from ccai.interop.protocols.upnp.model.services.upnpserviceproxy import UpnpServiceProxy
 from ccai.interop.protocols.upnp.constants import UPNP_DEVICE1_NAMESPACE
 
 
 # Types imported only for type checking purposes
 if TYPE_CHECKING:
     from ccai.landscaping.landscape import Landscape
+    from ccai.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
 
 EMPTY_LIST = []
 
@@ -926,6 +926,8 @@ class UpnpCoordinator(CoordinatorBase):
                         else:
                             valid = True
             except ConnectionError:
+                # The device is unreachable so the cache entry cannot be verified; 'valid' stays False and the
+                # stale cache file is removed below.
                 pass
 
         # If we can't connect to validate, remove the cached file

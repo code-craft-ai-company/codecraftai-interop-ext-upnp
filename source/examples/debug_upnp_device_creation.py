@@ -1,6 +1,4 @@
 
-import time
-
 from ccai.presence.wellknown import ConfiguredSuperFactorySingleton
 
 from ccai.interop.protocols.upnp.upnppresence import UpnpPresence

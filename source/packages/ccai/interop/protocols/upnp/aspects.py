@@ -20,7 +20,6 @@ import logging
 from ccai.aspects.aspects import Aspects as AspectsBase
 
 from ccai.interop.aspects import (
-    Aspects,
     ActionPattern,
     LoggingPattern,
     DEFAULT_COMPLETION_TIMEOUT,
@@ -31,7 +30,7 @@ from ccai.interop.aspects import (
     DEFAULT_LOGGING_PATTERN,
     DEFAULT_RETRY_LOGGING_INTERVAL,
     DEFAULT_ALLOWED_ERROR_CODES,
-    DEFAULT_MUST_CONNECT
+    DEFAULT_MUST_CONNECT,
 )
 
 

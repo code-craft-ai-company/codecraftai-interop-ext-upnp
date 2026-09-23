@@ -7,7 +7,6 @@ from xml.etree.ElementTree import fromstring as parse_xml_content
 
 from ccai.xmodules.xlogging.enhancedloggers import getEnhancedLogger
 
-from ccai.interop.constants import DIR_CCAI_INTEROP
 from ccai.interop.protocols.upnp.constants import (
     DIR_METADATA,
     DIR_METADATA_DEVICES,

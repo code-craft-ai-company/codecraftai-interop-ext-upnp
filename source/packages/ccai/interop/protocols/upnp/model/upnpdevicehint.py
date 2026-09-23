@@ -15,8 +15,6 @@ __credits__ = []
 
 from typing import TYPE_CHECKING
 
-from ccai.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
-
 if TYPE_CHECKING:
     from ccai.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
 

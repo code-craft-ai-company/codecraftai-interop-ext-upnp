@@ -59,7 +59,6 @@ from ccai.interop.protocols.upnp.constants import (
 
 from ccai.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
 from ccai.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
-from ccai.interop.protocols.upnp.model.description.serviceevidence import ServiceEvidence
 
 
 REGEX_NOTIFY_HEADER = re.compile(r"NOTIFY\s+\*\s+HTTP/1")
@@ -636,8 +635,6 @@ class UpnpPresence:
                 # Process the M-SEARCH message info
                 st = msg_info.get(MSearchKeys.ST, None)
                 if st is not None:
-                    mx = msg_info.get(MSearchKeys.MX, "1")
-
                     logger.debug(f"M-SEARCH: ifname={ifname} from={from_ip} ST={st}")
 
                     # Check the ST header to see if it is a request for the root device
@@ -713,8 +710,6 @@ class UpnpPresence:
         msg_info = parse_ssdp_message(message)
 
         if msg_info is not None:
-            message_st = msg_info.get(MSearchKeys.ST, None)
-
             nts = msg_info.get("NTS")
 
             if MSearchKeys.USN in msg_info:
@@ -740,7 +735,6 @@ class UpnpPresence:
                             logger.debug("NTS header missing for root device notification.")
     
                     elif len(ntparts) > 2:
-                        nt_comp_group = ntparts[1]
                         nt_comp_type = ntparts[2]
 
                         if nt_comp_type == "service":
@@ -1289,7 +1283,6 @@ class UpnpPresence:
                         self._callback_sockets[ifname] = temp_sock
                         self._callback_address_from_iface[ifname] = callback_addr
                         sock = temp_sock
-                        temp_sock = None  # Prevent cleanup in except block
                         
                     except Exception:
                         # Clean up the socket if any operation failed
@@ -1553,6 +1546,7 @@ class UpnpPresence:
                 try:
                     self._msearch_sock.close()
                 except Exception:
+                    # Best-effort close of the stale search socket; it is replaced with a new socket below.
                     pass
             self._msearch_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         finally:
@@ -1574,6 +1568,7 @@ class UpnpPresence:
                     logger.debug(resp)
 
             except socket.timeout:
+                # A receive timeout is expected; it lets the loop re-check 'self._running' so the thread can exit.
                 pass
 
             except OSError:
@@ -1620,6 +1615,7 @@ class UpnpPresence:
                     logger.debug(msg_in)
 
             except socket.timeout:
+                # A receive timeout is expected; it lets the loop re-check 'self._running' so the thread can exit.
                 pass
 
             except OSError:

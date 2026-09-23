@@ -68,8 +68,15 @@ class DidlDesc:
             Return XML lines representing this description element.
         """
 
+        attrs_str = ""
+
+        attr_items = self._attrs.items()
+        if len(attr_items) > 0:
+            for ak, av in self._attrs.items():
+                attrs_str = "{} {}='{}' ".format(attrs_str, ak, av)
+
         xlines = [
-            "{}<desc{}>".format(indent),
+            "{}<desc{}>".format(indent, attrs_str),
             "{}    {}".format(indent, self._desc),
             "{}</desc>".format(indent),
         ]
@@ -732,7 +739,7 @@ class DidlItemPhoto(DidlObject):
         return self._date
 
     @classmethod
-    def from_xml(self, obj_element: Element, namespaces: Optional[dict] = None):
+    def from_xml(cls, obj_element: Element, namespaces: Optional[dict] = None):
         """
             Create a :class:`DidlItemPhoto` from an XML element.
 

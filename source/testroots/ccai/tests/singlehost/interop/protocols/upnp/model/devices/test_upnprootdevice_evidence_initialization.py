@@ -1,5 +1,4 @@
 import unittest
-import sys
 from unittest.mock import MagicMock
 import weakref
 
@@ -45,7 +44,7 @@ from ccai.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
 from ccai.interop.protocols.upnp.model.description.basic1devicedesc import Basic1DeviceDesc
 from ccai.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
 from ccai.interop.protocols.upnp.model.description.specversion import SpecVersion
-from ccai.interop.protocols.upnp.constants import MSearchKeys, MSearchRouteKeys
+from ccai.interop.protocols.upnp.constants import MSearchKeys
 
 class TestUpnpRootDeviceInitialization(unittest.TestCase):
 

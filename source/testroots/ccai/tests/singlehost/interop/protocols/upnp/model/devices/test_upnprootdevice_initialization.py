@@ -3,7 +3,6 @@ import sys
 import os
 import unittest
 from unittest.mock import MagicMock
-import types
 
 # Ensure source/packages is in sys.path
 sys.path.insert(0, os.path.abspath("source/packages"))

@@ -1,10 +1,7 @@
 
-import sys
-import os
 import unittest
 from unittest.mock import MagicMock, patch
 from xml.etree.ElementTree import Element
-import types
 
 # Ensure source/packages is in sys.path
 

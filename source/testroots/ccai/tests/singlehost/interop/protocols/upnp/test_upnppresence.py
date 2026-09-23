@@ -1,40 +1,76 @@
-import unittest
-import socket
+"""
+    .. module:: test_upnppresence
+    :platform: Darwin, Linux, Unix, Windows
+    :synopsis: Tests for SSDP header parsing, the M-SEARCH thread socket handling, subscription event dispatch
+               and the search window matching performed on behalf of :class:`UpnpPresence`.
+"""
+
+from typing import List
+
 import threading
+
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
+
+from ccai import testbase
+
+from ccai.interop.protocols.upnp.model.description.deviceevidence import DeviceEvidence
+from ccai.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
+from ccai.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
 from ccai.interop.protocols.upnp.upnppresence import parse_http_headers, UpnpPresence
 from ccai.interop.protocols.upnp.upnpsearchwindow import UpnpSearchWindow, UpnpSearchWindowState
-from ccai.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint
-from ccai.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
 
-class TestUpnpPresence(unittest.TestCase):
 
-    def test_parse_http_headers_empty_content(self):
-        """
-        Verify that parse_http_headers raises ValueError instead of crashing with AssertionError or IndexError
-        when content is empty or contains only newlines.
-        """
-        # Case 1: Empty content
-        try:
-            parse_http_headers(b"")
-        except ValueError:
-            pass # Expected behavior
-        except Exception as e:
-            self.fail(f"Unexpected exception: {e}")
+class FakeSearchWindowOwner:
+    """
+        Stands in for the :class:`UpnpPresence` that owns a search window and reports device evidence.  It
+        records the IDs of the search windows that report themselves closed.
+    """
 
-        # Case 2: Only newlines (header end but no lines)
-        try:
-            parse_http_headers(b"\r\n\r\n")
-        except ValueError:
-            pass # Expected behavior
-        except Exception as e:
-            self.fail(f"Unexpected exception: {e}")
+    def __init__(self):
+        self.closed_windows: List[str] = []
+        return
 
-    @patch('ccai.interop.protocols.upnp.upnppresence.DeviceQueryManager')
-    def test_thread_entry_for_msearch_socket_overwrite(self, mock_dqm):
+    def search_window_closed(self, window_id: str):
         """
-        Verify that _thread_entry_for_msearch closes existing socket before overwriting it.
+            Records a search window closing.
+
+            :param window_id: The ID of the search window that closed.
         """
+        self.closed_windows.append(window_id)
+        return
+
+
+def test_parse_http_headers_empty_content():
+    """
+        Verify that parse_http_headers raises ValueError for empty content, and that content made only of
+        newlines does not crash with an AssertionError or IndexError.
+    """
+    # Case 1: Empty content
+    raised = None
+    try:
+        parse_http_headers(b"")
+    except ValueError as xcpt:
+        raised = xcpt
+
+    testbase.assert_true(raised is not None, "ValueError raised for empty content")
+
+    # Case 2: Only newlines (header end but no lines).  Any exception other than ValueError propagates
+    # and errors the test.
+    try:
+        parse_http_headers(b"\r\n\r\n")
+    except ValueError:
+        # Rejecting header content that has no request line is an acceptable outcome.
+        pass
+
+    return
+
+
+def test_thread_entry_for_msearch_socket_overwrite():
+    """
+        Verify that _thread_entry_for_msearch closes an existing socket before overwriting it.
+    """
+    with patch('ccai.interop.protocols.upnp.upnppresence.DeviceQueryManager'):
         presence = UpnpPresence()
 
         # Pre-create a socket as if discover_devices was called
@@ -45,103 +81,107 @@ class TestUpnpPresence(unittest.TestCase):
         new_sock = MagicMock()
 
         with patch('socket.socket', return_value=new_sock):
-             # We want to run _thread_entry_for_msearch but stop it quickly
-             presence._running = False # Stop the loop immediately
+            # Stop the receive loop immediately
+            presence._running = False
 
-             # But we need sgate to be set
-             sgate = threading.Event()
+            sgate = threading.Event()
+            presence._thread_entry_for_msearch(sgate)
 
-             # Call the method
-             presence._thread_entry_for_msearch(sgate)
+            # Check if old socket was closed
+            mock_sock.close.assert_called_once()
 
-             # Check if old socket was closed
-             mock_sock.close.assert_called_once()
+            # Check if new socket is assigned
+            testbase.assert_true(presence._msearch_sock is new_sock, "the new search socket is assigned")
 
-             # Check if new socket is assigned
-             self.assertEqual(presence._msearch_sock, new_sock)
+    return
 
-    def test_search_window_matching_devices_keys(self):
-        """
-        Verify that matching_devices uses USNs as keys.
-        """
-        presence = MagicMock()
-        # Create a hint
-        hint = MagicMock()
-        hint.get_hint.return_value = "hint_string"
-        hint.matches.return_value = True
 
-        # Create a device
-        device = MagicMock()
-        device.usn = "uuid:device1"
+def test_search_window_matching_devices_keyed_by_usn():
+    """
+        A search window limited to a hint completes once a found device matches the hint, and records the
+        matching device under the device's USN rather than under the hint string.
+    """
+    owner = FakeSearchWindowOwner()
 
-        # Create search window
-        # Mocking time.sleep to break the loop by forcing state change
-        with patch('time.sleep', side_effect=lambda x: setattr(window, '_window_state', UpnpSearchWindowState.COMPLETED)):
-             window = UpnpSearchWindow(presence, "id", 0, 100, 0.1, limit_to=[hint])
+    device_usn = "uuid:device1::urn:schemas-upnp-org:device:MediaRenderer:1"
+    evidence = DeviceEvidence(
+        usn=device_usn,
+        status="ssdp:alive",
+        server="Linux UPnP/1.0",
+        location="http://192.168.1.10:8080/description.xml",
+        ip="192.168.1.10",
+        other={},
+        presence=owner
+    )
+    device = UpnpDeviceDetail(None, evidence)
+    hint = UpnpDeviceHint("device1")
 
-             # Manually inject device found
-             with window._lock:
-                 window._devices_found = {device.usn: device}
-                 window._window_state = UpnpSearchWindowState.ACTIVE
+    start = datetime.now()
+    end = start + timedelta(seconds=30)
+    window = UpnpSearchWindow(owner, "window-1", start, end, 0.01, limit_to=[hint])
+    window.add_device(device_usn, device)
 
-             sgate = threading.Event()
-             try:
-                 window._monitor_thread_entry(sgate)
-             except Exception:
-                 pass
+    window.start()
+    closed = window.wait(timeout=10)
 
-        # Check matching_devices
-        # Correct expectation: key is "uuid:device1"
+    testbase.assert_true(closed, "the search window closed before the wait timed out")
+    testbase.assert_equal(window._window_state, UpnpSearchWindowState.COMPLETED)
 
-        print(f"Matching devices keys: {window.matching_devices.keys()}")
-        self.assertNotIn("hint_string", window.matching_devices.keys())
-        self.assertIn("uuid:device1", window.matching_devices.keys())
+    matching = window.matching_devices
+    testbase.assert_equal(list(matching.keys()), [device_usn])
+    testbase.assert_true(matching[device_usn] is device, "the matching entry is the device detail that was found")
+    testbase.assert_equal(owner.closed_windows, ["window-1"])
 
-    def test_dispatch_subscription_event_callback_signatures(self):
-        """
+    return
+
+
+def test_dispatch_subscription_event_callback_signatures():
+    """
         Verify that subscription callbacks support both 4-arg and 5-arg signatures.
-        """
-        presence = UpnpPresence()
+    """
+    presence = UpnpPresence()
 
-        captured = {}
+    captured = {}
 
-        def callback_five(ifname, sid, svc_addr, headers, body):
-            captured["five"] = (ifname, sid, svc_addr, headers, body)
+    def callback_five(ifname, sid, svc_addr, headers, body):
+        captured["five"] = (ifname, sid, svc_addr, headers, body)
 
-        def callback_four(sender_ip, sid, headers, body):
-            captured["four"] = (sender_ip, sid, headers, body)
+    def callback_four(sender_ip, sid, headers, body):
+        captured["four"] = (sender_ip, sid, headers, body)
 
-        def callback_varargs(*args):
-            captured["varargs"] = args
+    def callback_varargs(*args):
+        captured["varargs"] = args
 
-        presence._subscription_to_callback["sid5"] = callback_five
-        presence._subscription_to_callback["sid4"] = callback_four
-        presence._subscription_to_callback["sidva"] = callback_varargs
+    presence._subscription_to_callback["sid5"] = callback_five
+    presence._subscription_to_callback["sid4"] = callback_four
+    presence._subscription_to_callback["sidva"] = callback_varargs
 
-        svc_addr = ("10.1.1.5", 4567)
-        headers = {"SID": "sid5"}
-        body = b"<prop>1</prop>"
+    svc_addr = ("10.1.1.5", 4567)
+    headers = {"SID": "sid5"}
+    body = b"<prop>1</prop>"
 
-        presence.dispatch_subscription_event_callback("eth0", "sid5", svc_addr, headers, body)
-        presence.dispatch_subscription_event_callback("eth0", "sid4", svc_addr, headers, body)
-        presence.dispatch_subscription_event_callback("eth0", "sidva", svc_addr, headers, body)
+    presence.dispatch_subscription_event_callback("eth0", "sid5", svc_addr, headers, body)
+    presence.dispatch_subscription_event_callback("eth0", "sid4", svc_addr, headers, body)
+    presence.dispatch_subscription_event_callback("eth0", "sidva", svc_addr, headers, body)
 
-        self.assertEqual(captured["five"][0], "eth0")
-        self.assertEqual(captured["five"][1], "sid5")
-        self.assertEqual(captured["five"][2], svc_addr)
-        self.assertEqual(captured["five"][3], headers)
-        self.assertEqual(captured["five"][4], body)
+    five_ifname, five_sid, five_svc_addr, five_headers, five_body = captured["five"]
+    testbase.assert_equal(five_ifname, "eth0")
+    testbase.assert_equal(five_sid, "sid5")
+    testbase.assert_equal(five_svc_addr, svc_addr)
+    testbase.assert_equal(five_headers, headers)
+    testbase.assert_equal(five_body, body)
 
-        self.assertEqual(captured["four"][0], "10.1.1.5")
-        self.assertEqual(captured["four"][1], "sid4")
-        self.assertEqual(captured["four"][2], headers)
-        self.assertEqual(captured["four"][3], body)
+    four_sender_ip, four_sid, four_headers, four_body = captured["four"]
+    testbase.assert_equal(four_sender_ip, "10.1.1.5")
+    testbase.assert_equal(four_sid, "sid4")
+    testbase.assert_equal(four_headers, headers)
+    testbase.assert_equal(four_body, body)
 
-        self.assertEqual(captured["varargs"][0], "eth0")
-        self.assertEqual(captured["varargs"][1], "sidva")
-        self.assertEqual(captured["varargs"][2], svc_addr)
-        self.assertEqual(captured["varargs"][3], headers)
-        self.assertEqual(captured["varargs"][4], body)
+    va_ifname, va_sid, va_svc_addr, va_headers, va_body = captured["varargs"]
+    testbase.assert_equal(va_ifname, "eth0")
+    testbase.assert_equal(va_sid, "sidva")
+    testbase.assert_equal(va_svc_addr, svc_addr)
+    testbase.assert_equal(va_headers, headers)
+    testbase.assert_equal(va_body, body)
 
-if __name__ == '__main__':
-    unittest.main()
+    return

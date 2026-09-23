@@ -19,8 +19,6 @@ import json
 
 from ccai.xmodules.xlogging.enhancedloggers import getEnhancedLogger
 
-from ccai.networking.constants import HTTP1_1_LINESEP
-
 from ccai.interop.protocols.upnp.model.description.icondesc import IconDesc
 from ccai.interop.protocols.upnp.model.description.serviceevidence import ServiceEvidence
 from ccai.interop.protocols.upnp.model.description.specversion import SpecVersion

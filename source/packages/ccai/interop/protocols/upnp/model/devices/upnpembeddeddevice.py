@@ -12,8 +12,6 @@ __copyright__ = "Copyright 2025, Code Craft AI LLC"
 __credits__ = []
 
 
-import threading
-
 from ccai.errors.exceptions import SemanticError
 
 from ccai.interop.protocols.upnp.model.devices.upnpdevicebase import UpnpDeviceBase

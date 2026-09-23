@@ -20,7 +20,7 @@ import threading
 import time
 import weakref
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from ccai.interop.protocols.upnp.model.upnpdevicedetail import UpnpDeviceDetail
 from ccai.interop.protocols.upnp.model.upnpdevicehint import UpnpDeviceHint

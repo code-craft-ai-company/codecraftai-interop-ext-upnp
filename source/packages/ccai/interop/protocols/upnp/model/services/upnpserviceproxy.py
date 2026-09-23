@@ -19,7 +19,6 @@ from ccai.xmodules.xlogging.enhancedloggers import getEnhancedLogger
 import os
 import threading
 import time
-import traceback
 import weakref
 
 from xml.etree.ElementTree import Element as XmlElement
@@ -44,7 +43,6 @@ from ccai.interop.protocols.upnp.soap import SoapProcessor, SOAP_TIMEOUT
 from ccai.interop.protocols.upnp.upnperrors import UpnpError
 from ccai.interop.protocols.upnp.model.services.upnpdefaultvar import UpnpDefaultVar
 
-from ccai.interop.protocols.upnp.model.description.basic1devicedesc import Basic1DeviceDesc
 from ccai.interop.protocols.upnp.model.description.serviceevidence import ServiceEvidence
 
 
@@ -643,8 +641,6 @@ class UpnpServiceProxy(EventedVariableSink):
             status_code = resp.status_code
         except requests.exceptions.HTTPError:
             if resp is not None:
-                # Extract status code before any potential response closure
-                status_code = resp.status_code
                 # If the body of the error response contains XML then it should be a UPnP error,
                 # extract the UPnP error information and raise a UpnpError
                 content_type = resp.headers.get("content-type", "").lower()

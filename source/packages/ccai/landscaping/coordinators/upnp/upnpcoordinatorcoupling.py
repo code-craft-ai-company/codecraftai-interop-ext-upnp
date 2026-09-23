@@ -167,7 +167,6 @@ class UpnpCoordinatorIntegration(CoordinatorCoupling):
             :returns: A tuple with a list of error messages for failed connections and dict of connectivity
             reports for devices devices based on the coordinator.
         """
-        lscape = cls.landscape
         conn_errors: List[str] = []
         conn_results: dict = {}
 

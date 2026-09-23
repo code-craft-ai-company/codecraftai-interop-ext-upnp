@@ -1,6 +1,4 @@
 
-from typing import List
-
 from ccai.interop.manufacturers.bose.constants import BOSE_MANUFACTURER_NAME
 
 from ccai.interop.protocols.upnp.generation.upnpdeviceclassgenerator import UpnpDeviceClassGenerator

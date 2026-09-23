@@ -15,9 +15,8 @@ __credits__ = []
 import enum
 import re
 
-from xml.etree.ElementTree import Element, SubElement, QName, ParseError, XMLParser
+from xml.etree.ElementTree import Element, SubElement, ParseError
 from xml.etree.ElementTree import tostring as xml_tostring
-from xml.etree.ElementTree import fromstring as xml_fromstring_unsafe
 from xml.etree.ElementTree import register_namespace
 
 from defusedxml.ElementTree import fromstring as xml_fromstring_secure
@@ -378,12 +377,10 @@ class SoapProcessor:
             faultCodeNode = resp_body.find(".//faultcode")
             if faultCodeNode is None or faultCodeNode.text is None:
                 raise SOAPProtocolError("SOAP Fault missing required 'faultcode' element or empty content")
-            faultCode = faultCodeNode.text
             
             faultStringNode = resp_body.find(".//faultstring")
             if faultStringNode is None or faultStringNode.text is None:
                 raise SOAPProtocolError("SOAP Fault missing required 'faultstring' element or empty content")
-            faultString = faultStringNode.text
             
             detail = resp_body.find(".//detail")
             if detail is None:

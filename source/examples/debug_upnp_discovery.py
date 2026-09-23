@@ -63,7 +63,8 @@ def main_debug_upnp_discovery():
                 last_report = time.time()
 
         except OSError as err:
-            pass
+            # Keep the debug discovery loop running across transient network errors, but report them.
+            print(f"OSError during discovery loop: {err}")
 
         print("Tick")
         time.sleep(5)
