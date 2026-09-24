@@ -12,8 +12,12 @@ __copyright__ = "Copyright 2025, Code Craft AI LLC"
 __credits__ = []
 
 
+from typing import Optional
+
 import enum
+import os
 import re
+import warnings
 
 from xml.etree.ElementTree import Element, SubElement, ParseError
 from xml.etree.ElementTree import tostring as xml_tostring
@@ -78,6 +82,102 @@ class SOAPProtocolError(ProtocolError):
     """
         Error that is raised when a Soap protocol error occurs.
     """
+
+def find_declared_encoding_style(*elements: Optional[Element]) -> Optional[str]:
+    """
+        Finds the SOAP ``encodingStyle`` that is in effect for the innermost of the elements.  The elements are
+        passed from the innermost to the outermost (for example the response element, the Body and the
+        Envelope) and the first one that declares an ``encodingStyle`` wins, which is how the scope of the
+        SOAP 1.1 ``encodingStyle`` attribute works.  An attribute without the SOAP envelope namespace is
+        accepted as well for non-compliant devices.
+
+        :param elements: The elements to search, from the innermost to the outermost.  ``None`` entries are
+                         skipped.
+
+        :returns: The declared ``encodingStyle`` value or ``None`` when none of the elements declares one.
+    """
+    declared = None
+
+    for element in elements:
+        if element is None:
+            continue
+
+        declared = element.get(f"{{{NS_SOAP_ENV}}}encodingStyle")
+        if declared is None:
+            declared = element.get("encodingStyle")
+
+        if declared is not None:
+            break
+
+    return declared
+
+
+def verify_encoding_style(action_name: str, expected_encoding: Optional[str], declared_encoding: Optional[str]):
+    """
+        Verifies that a SOAP message was serialized with the encoding the processor decodes.  The check is
+        lenient for devices that do not declare an ``encodingStyle`` (or declare the zero-length URI, which
+        makes no claim) and strict when a device declares encoding rules that do not include the expected
+        one, because the message cannot then be decoded with the expected rules.  The ``encodingStyle`` value
+        is a space separated list of URIs; the URIs are compared without a trailing '/'.
+
+        :param action_name: The name of the action the message belongs to, for the error message.
+        :param expected_encoding: The SOAP encoding URI the processor decodes, ``None`` or empty to skip the check.
+        :param declared_encoding: The ``encodingStyle`` declared by the message, ``None`` when it declares none.
+
+        :raises: SOAPProtocolError when the message declares encoding rules that do not include the expected one.
+    """
+
+    if expected_encoding is None or len(expected_encoding) == 0:
+        return
+
+    if declared_encoding is None:
+        return
+
+    declared_uris = declared_encoding.split()
+    if len(declared_uris) == 0:
+        return
+
+    expected_uri = expected_encoding.rstrip("/")
+
+    matched = False
+    for declared_uri in declared_uris:
+        if declared_uri.rstrip("/") == expected_uri:
+            matched = True
+            break
+
+    if not matched:
+        errmsg_lines = [
+            f"The SOAP message for action '{action_name}' declares an encodingStyle that does not include the expected SOAP encoding.",
+            f"EXPECTED: {expected_encoding}",
+            f"DECLARED: {declared_encoding}",
+            "Pass the 'encoding' the device uses to the SoapProcessor or to the parse method.",
+        ]
+        errmsg = os.linesep.join(errmsg_lines)
+        raise SOAPProtocolError(errmsg)
+
+    return
+
+
+def warn_envelope_attrib_ignored_for_parsing(method_name: str):
+    """
+        Warns that the ``envelope_attrib`` parameter of a parse method is deprecated.  The envelope attributes
+        (namespace prefix declarations and the envelope ``encodingStyle``) only describe how an envelope is
+        built by :meth:`SoapProcessor.create_request` and :meth:`SoapProcessor.create_response`.  A parser
+        cannot check them against a response: prefixes are chosen freely by the sender and ElementTree resolves
+        and drops the ``xmlns`` declarations while parsing.  The expected ``encodingStyle`` is checked through
+        the ``encoding`` parameter instead.
+
+        :param method_name: The name of the parse method that was passed ``envelope_attrib``.
+    """
+    msg_lines = [
+        f"The 'envelope_attrib' parameter of SoapProcessor.{method_name} is deprecated and ignored.",
+        "It only applies to building envelopes (create_request/create_response); use 'encoding' to check the",
+        "encodingStyle of a response.",
+    ]
+    msg = " ".join(msg_lines)
+    warnings.warn(msg, DeprecationWarning, stacklevel=3)
+    return
+
 
 def remove_extraneous_xml_declarations(xml_str):
     """
@@ -268,13 +368,26 @@ class SoapProcessor:
     def parse_response(self, action_name, content, encoding=None, envelope_attrib=None, typed=None):
         """
             Parses a response from the server with the given action name and content.
+
+            :param action_name: The name of the action the response belongs to.
+            :param content: The XML content of the response.
+            :param encoding: The SOAP encoding URI the response is decoded with, defaults to the processor's
+                             encoding.  A response that declares an ``encodingStyle`` which does not include it
+                             is rejected; a response that declares none is accepted.
+            :param envelope_attrib: Deprecated and ignored, the envelope attributes only apply to building
+                                    envelopes.  Passing it emits a :class:`DeprecationWarning`.
+            :param typed: The service type namespace of the response element, defaults to the processor's.
+
+            :returns: A dictionary of the response arguments.
+            :raises: SOAPProtocolError
         """
         register_namespace('', None)
 
+        if envelope_attrib is not None:
+            warn_envelope_attrib_ignored_for_parsing("parse_response")
+
         if encoding is None:
             encoding = self._encoding
-        if envelope_attrib is None:
-            envelope_attrib = self._envelope_attrib
         if typed is None:
             typed = self._typed
 
@@ -306,6 +419,10 @@ class SoapProcessor:
             print(msg + '\n' + xml_debug)
             raise SOAPProtocolError(msg)
 
+        body_node = docNode.find("{%s}Body" % (NS_SOAP_ENV,))
+        declared_encoding = find_declared_encoding_style(resp_body, body_node, docNode)
+        verify_encoding_style(action_name, encoding, declared_encoding)
+
         # Sometimes devices return XML strings as their argument values without escaping them with
         # CDATA. This checks to see if the argument has been parsed as XML and un-parses it if so.
         resp_dict = {}
@@ -325,13 +442,28 @@ class SoapProcessor:
     def parse_response_error_for_upnp(self, action_name, content, status_code, extra=None, encoding=None, envelope_attrib=None, typed=None):
         """
             Parse response error for a upnp response.
+
+            :param action_name: The name of the action the error response belongs to.
+            :param content: The XML content of the error response.
+            :param status_code: The HTTP status code of the error response.
+            :param extra: Optional extra text added to the error when the response cannot be processed.
+            :param encoding: The SOAP encoding URI the response is decoded with, defaults to the processor's
+                             encoding.  A response that declares an ``encodingStyle`` which does not include it
+                             is rejected; a response that declares none is accepted.
+            :param envelope_attrib: Deprecated and ignored, the envelope attributes only apply to building
+                                    envelopes.  Passing it emits a :class:`DeprecationWarning`.
+            :param typed: The service type namespace, used to find a Fault placed in it by non-compliant devices.
+
+            :returns: A tuple of the UPnP error code and error description.
+            :raises: SOAPProtocolError
         """
         register_namespace('', None)
 
+        if envelope_attrib is not None:
+            warn_envelope_attrib_ignored_for_parsing("parse_response_error_for_upnp")
+
         if encoding is None:
             encoding = self._encoding
-        if envelope_attrib is None:
-            envelope_attrib = self._envelope_attrib
         if typed is None:
             typed = self._typed
 
@@ -371,6 +503,10 @@ class SoapProcessor:
                 xml_debug = xml_tostring(docNode, short_empty_elements=False).decode('utf-8', errors='replace')
             print(msg + '\n' + xml_debug)
             raise SOAPProtocolError(msg)
+
+        body_node = docNode.find("{%s}Body" % (NS_SOAP_ENV,))
+        declared_encoding = find_declared_encoding_style(resp_body, body_node, docNode)
+        verify_encoding_style(action_name, encoding, declared_encoding)
 
         # Lets try to extract the XML response error information
         try:

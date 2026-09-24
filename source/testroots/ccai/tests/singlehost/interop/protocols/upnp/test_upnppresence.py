@@ -43,26 +43,47 @@ class FakeSearchWindowOwner:
 
 def test_parse_http_headers_empty_content():
     """
-        Verify that parse_http_headers raises ValueError for empty content, and that content made only of
-        newlines does not crash with an AssertionError or IndexError.
+        Verify that parse_http_headers raises ValueError, and not an AssertionError or IndexError, for header
+        content that has no request line: empty content and content made only of newlines.
     """
-    # Case 1: Empty content
-    raised = None
-    try:
-        parse_http_headers(b"")
-    except ValueError as xcpt:
-        raised = xcpt
+    for header_content in [b"", b"\r\n\r\n", b"\r\n", b"  \r\n\t\r\n"]:
+        raised = None
+        try:
+            parse_http_headers(header_content)
+        except ValueError as xcpt:
+            raised = xcpt
 
-    testbase.assert_true(raised is not None, "ValueError raised for empty content")
+        testbase.assert_true(raised is not None, f"ValueError raised for header content {header_content!r}")
+        testbase.assert_true("no request line" in str(raised), "the error explains the request line is missing")
 
-    # Case 2: Only newlines (header end but no lines).  Any exception other than ValueError propagates
-    # and errors the test.
-    try:
-        parse_http_headers(b"\r\n\r\n")
-    except ValueError:
-        # Rejecting header content that has no request line is an acceptable outcome.
-        pass
+    return
 
+
+def test_parse_http_headers_returns_request_line_and_headers():
+    """
+        Verify that parse_http_headers returns the request line and the upper cased header names with their
+        values.
+    """
+    header_content = b"NOTIFY /callback HTTP/1.1\r\nHOST: 10.0.0.1:8080\r\nsid: uuid:1234\r\nNT: upnp:event"
+
+    req_line, headers = parse_http_headers(header_content)
+
+    testbase.assert_equal(req_line, "NOTIFY /callback HTTP/1.1")
+    testbase.assert_equal(headers, {"HOST": "10.0.0.1:8080", "SID": "uuid:1234", "NT": "upnp:event"})
+    return
+
+
+def test_parse_http_headers_skips_empty_lines_before_the_request_line():
+    """
+        Verify that empty lines received before the request line are ignored (RFC 7230 section 3.5) instead of
+        being returned as an empty request line.
+    """
+    header_content = b"\r\n\r\nNOTIFY /callback HTTP/1.1\r\nSID: uuid:1234"
+
+    req_line, headers = parse_http_headers(header_content)
+
+    testbase.assert_equal(req_line, "NOTIFY /callback HTTP/1.1")
+    testbase.assert_equal(headers, {"SID": "uuid:1234"})
     return
 
 

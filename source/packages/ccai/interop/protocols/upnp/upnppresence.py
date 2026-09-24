@@ -138,24 +138,40 @@ def parse_http_headers(header_content: bytes) -> Tuple[str, Dict[str, str]]:
         Parses an HTTP header block and returns the request line and
         dictionary of header values.
 
+        Empty lines received before the request line are ignored, as RFC 7230
+        section 3.5 recommends for robustness.
+
         :param header_content: Raw bytes of the HTTP header.
 
         :returns: Tuple of the request line and a dictionary of headers.
+        :raises: ValueError when the header block has no request line (it is
+                 empty or made only of empty lines).
     """
 
     headers = {}
     header_lines = header_content.splitlines(False)
 
-    if not header_lines:
-        raise ValueError("The header content was not a valid HTTP request header.")
+    # Skip the empty lines that may precede the request line.
+    first_index = 0
+    while first_index < len(header_lines) and len(header_lines[first_index].strip()) == 0:
+        first_index += 1
 
+    if first_index >= len(header_lines):
+        errmsg_lines = [
+            "The header content was not a valid HTTP request header, it has no request line.",
+            "HEADER LENGTH: {} bytes in {} empty lines".format(len(header_content), len(header_lines)),
+        ]
+        errmsg = os.linesep.join(errmsg_lines)
+        raise ValueError(errmsg)
+
+    request_line_bytes = header_lines[first_index]
     try:
-        req_line = header_lines[0].decode("utf-8").strip()
+        req_line = request_line_bytes.decode("utf-8").strip()
     except UnicodeDecodeError as e:
         logger.error("Failed to decode HTTP request line as UTF-8: %s", e)
-        req_line = header_lines[0].decode("utf-8", errors="replace").strip()
+        req_line = request_line_bytes.decode("utf-8", errors="replace").strip()
 
-    for hline in header_lines[1:]:
+    for hline in header_lines[first_index + 1:]:
         name_end = hline.find(b":")
         if name_end > 0:
             try:
