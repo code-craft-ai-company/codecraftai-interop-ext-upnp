@@ -22,6 +22,10 @@ dependencies = [
     "requests>=2.32,<3.0.0",
 ]
 
+[project.urls]
+Repository = "https://github.com/code-craft-ai-company/codecraftai-interop-ext-upnp"
+Issues = "https://github.com/code-craft-ai-company/codecraftai-interop-ext-upnp/issues"
+
 [dependency-groups]
 dev = []
 
