@@ -1,6 +1,6 @@
 [project]
 name = "codecraftai-interop-ext-upnp"
-version = "1.3.1"
+version = "1.3.2"
 description = "Code Craft AI - Upnp InterOp Extensions"
 readme = "README.rst"
 license = "LicenseRef-CodeCraftAI-Source-Available"
@@ -15,10 +15,15 @@ classifiers = [
 requires-python = ">=3.10,<4.0"
 dependencies = [
     "codecraftai-foundations>=1.0.0,<2.0.0",
+    "codecraftai-extension>=1.0.0,<2.0.0",
     "codecraftai-interop>=1.0.0,<2.0.0",
     "codecraftai-landscaping>=1.0.0,<2.0.0",
+    "codecraftai-networking>=1.0.0,<2.0.0",
     "codecraftai-this-app>=1.0.0,<2.0.0",
+    "codecraftai-xmodules>=1.0.0,<2.0.0",
+    "click>=8.2.1,<9.0.0",
     "defusedxml>=0.7.1,<0.8.0",
+    "pyyaml>=6.0.2,<7.0.0",
     "requests>=2.32,<3.0.0",
 ]
 
